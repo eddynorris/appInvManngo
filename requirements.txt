@@ -1,0 +1,29 @@
+# Flask y extensiones principales
+Flask==2.3.3
+Flask-RESTful==0.3.9
+Flask-SQLAlchemy==3.0.5
+Flask-JWT-Extended==4.5.2
+
+# Base de datos PostgreSQL
+psycopg2-binary==2.9.9
+
+# Serialización con Marshmallow
+marshmallow==3.19.0
+marshmallow-sqlalchemy==0.28.1
+
+# Herramientas adicionales
+SQLAlchemy==2.0.20
+Werkzeug==2.3.7  # Para manejo de solicitudes HTTP
+python-dotenv==1.0.0  # Para manejar variables de entorno (opcional)
+
+# Validación de argumentos
+Flask-Parser==0.5.0  # Para manejar reqparse (aunque está integrado en Flask-RESTful)
+
+# Opcionales (si planeas usar Celery o Twilio)
+celery==5.3.6  # Para tareas asíncronas
+twilio==8.1.0  # Para integración con WhatsApp Business (si es necesario)
+
+# Pruebas y desarrollo
+pytest==7.4.2  # Para pruebas unitarias
+flake8==6.1.0  # Para análisis de código
+black==23.9.1  # Para formatear código automáticamente
