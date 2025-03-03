@@ -6,9 +6,11 @@ from schemas import producto_schema, productos_schema
 from extensions import db
 from decimal import Decimal
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
+from marshmallow import ValidationError
 
 class ProductoResource(Resource):
     @jwt_required()
+    @handle_db_errors
     def get(self, producto_id=None):
         if producto_id:
             producto = Producto.query.get_or_404(producto_id)
@@ -19,7 +21,7 @@ class ProductoResource(Resource):
         productos = Producto.query.paginate(page=page, per_page=per_page, error_out=False)
 
         return {
-            "data": producto_schema.dump(productos.items),
+            "data": productos_schema.dump(productos.items),
             "pagination": {
                 "total": productos.total,
                 "page": productos.page,
@@ -29,6 +31,7 @@ class ProductoResource(Resource):
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
        
         nuevo_producto = producto_schema.load(request.get_json())
@@ -37,6 +40,7 @@ class ProductoResource(Resource):
         return producto_schema.dump(nuevo_producto), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, producto_id):
         # Obtiene el producto existente de la base de datos
         producto = Producto.query.get_or_404(producto_id)
@@ -55,6 +59,7 @@ class ProductoResource(Resource):
         return producto_schema.dump(updated_producto), 200
  
     @jwt_required()
+    @handle_db_errors
     def delete(self, producto_id):
         producto = Producto.query.get_or_404(producto_id)
         db.session.delete(producto)

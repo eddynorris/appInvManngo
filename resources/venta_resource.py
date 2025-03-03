@@ -8,6 +8,7 @@ from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class VentaResource(Resource):
     @jwt_required()
+    @handle_db_errors
     def get(self, venta_id=None):
         if venta_id:
             venta = Venta.query.get_or_404(venta_id)
@@ -17,7 +18,7 @@ class VentaResource(Resource):
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
         ventas = Venta.query.paginate(page=page, per_page=per_page, error_out=False)
         return {
-            "data": venta_schema.dump(ventas.items),
+            "data": ventas_schema.dump(ventas.items),
             "pagination": {
                 "total": ventas.total,
                 "page": ventas.page,
@@ -27,6 +28,7 @@ class VentaResource(Resource):
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
         data = request.get_json()
         detalles = data.pop("detalles", [])
@@ -59,6 +61,7 @@ class VentaResource(Resource):
         return venta_schema.dump(venta_completa), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
         data = request.get_json()
@@ -97,6 +100,7 @@ class VentaResource(Resource):
         return venta_schema.dump(updated_venta), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
         db.session.delete(venta)

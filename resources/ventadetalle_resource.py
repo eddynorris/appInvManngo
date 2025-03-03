@@ -9,6 +9,7 @@ from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class VentaDetalleResource(Resource):
     @jwt_required()
+    @handle_db_errors
     def get(self, detalle_id=None):
         if detalle_id:
             detalle = VentaDetalle.query.get_or_404(detalle_id)
@@ -28,13 +29,16 @@ class VentaDetalleResource(Resource):
         }, 200        
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
         nuevo_detalle = venta_detalle_schema.load(request.get_json())
         db.session.add(nuevo_detalle)
         db.session.commit()
         return venta_detalle_schema.dump(nuevo_detalle), 201
 
+
     @jwt_required()
+    @handle_db_errors
     def put(self, detalle_id):
         detalle = VentaDetalle.query.get_or_404(detalle_id)
         updated_detalle = venta_detalle_schema.load(
@@ -46,6 +50,7 @@ class VentaDetalleResource(Resource):
         return venta_detalle_schema.dump(updated_detalle), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, detalle_id):
         detalle = VentaDetalle.query.get_or_404(detalle_id)
         db.session.delete(detalle)

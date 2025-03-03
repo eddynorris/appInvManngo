@@ -5,6 +5,7 @@ from models import Almacen
 from schemas import almacen_schema, almacenes_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
+from marshmallow import ValidationError
 
 class AlmacenResource(Resource):
     @jwt_required()
@@ -38,15 +39,19 @@ class AlmacenResource(Resource):
 
     @jwt_required()
     @handle_db_errors
-    def put(self, almacen_id):
+    def put(self, almacen_id):  
+        # Obtiene el producto existente de la base de datos
         almacen = Almacen.query.get_or_404(almacen_id)
-        data = almacen_schema.load(request.get_json(), partial=True)
-        
-        for key, value in data.items():
-            setattr(almacen, key, value)
-            
+        # Deserializa los datos recibidos y actualiza la instancia del producto
+        updated_almacen = almacen_schema.load(
+            request.get_json(),
+            instance=almacen,  # Actualiza la instancia existente
+            partial=True        # Permite actualizar solo algunos campos
+        )
+        # Guarda los cambios en la base de datos
         db.session.commit()
-        return almacen_schema.dump(almacen), 200
+        # Serializa y devuelve la respuesta
+        return almacen_schema.dump(updated_almacen), 200
 
     @jwt_required()
     @handle_db_errors

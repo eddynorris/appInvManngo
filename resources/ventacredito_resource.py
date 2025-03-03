@@ -8,6 +8,7 @@ from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class VentaCreditoResource(Resource):
     @jwt_required()
+    @handle_db_errors
     def get(self, credito_id=None):
         if credito_id:
             credito = VentaCredito.query.get_or_404(credito_id)
@@ -27,6 +28,7 @@ class VentaCreditoResource(Resource):
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
         nuevo_credito = venta_credito_schema.load(request.get_json())
         db.session.add(nuevo_credito)
@@ -34,6 +36,7 @@ class VentaCreditoResource(Resource):
         return venta_credito_schema.dump(nuevo_credito), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, credito_id):
         credito = VentaCredito.query.get_or_404(credito_id)
         updated_credito = venta_credito_schema.load(
@@ -45,6 +48,7 @@ class VentaCreditoResource(Resource):
         return venta_credito_schema.dump(updated_credito), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, credito_id):
         credito = VentaCredito.query.get_or_404(credito_id)
         db.session.delete(credito)

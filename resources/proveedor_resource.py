@@ -8,6 +8,7 @@ from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class ProveedorResource(Resource):
     @jwt_required()
+    @handle_db_errors
     def get(self, proveedor_id=None):
         if proveedor_id:
             proveedor = Proveedor.query.get_or_404(proveedor_id)
@@ -27,6 +28,7 @@ class ProveedorResource(Resource):
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
 
         nuevo_proveedor = proveedor_schema.load(request.get_json())
@@ -35,6 +37,7 @@ class ProveedorResource(Resource):
         return proveedor_schema.dump(nuevo_proveedor), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, proveedor_id):
         proveedor = Proveedor.query.get_or_404(proveedor_id)
         updated_proveedor = proveedor_schema.load(
@@ -46,6 +49,7 @@ class ProveedorResource(Resource):
         return proveedor_schema.dump(updated_proveedor), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, proveedor_id):
         proveedor = Proveedor.query.get_or_404(proveedor_id)
         db.session.delete(proveedor)
