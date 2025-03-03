@@ -1,39 +1,62 @@
-
-from extensions import db 
-from models import User
-from flask_jwt_extended import create_access_token
 from flask_restful import Resource, reqparse
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import create_access_token
+from werkzeug.security import check_password_hash, generate_password_hash
+from models import Users
+from extensions import db
+import datetime
 
 class AuthResource(Resource):
     def post(self):
         parser = reqparse.RequestParser()
-        parser.add_argument('username', type=str, required=True)
-        parser.add_argument('password', type=str, required=True)
-        args = parser.parse_args()
-        user = User.query.filter_by(username=args['username']).first()
+        parser.add_argument('username', type=str, required=True, help='El nombre de usuario es requerido')
+        parser.add_argument('password', type=str, required=True, help='La contraseña es requerida')
         
-        if user and check_password_hash(user.password, args['password']):
-            access_token = create_access_token(identity=user.id)
-            return {'access_token': access_token}, 200
+        data = parser.parse_args()
+        
+        # Find user by username
+        usuario = Users.query.filter_by(username=data['username']).first()
+        
+        # Check if user exists and password is correct
+        if usuario and check_password_hash(usuario.password, data['password']):
+            # Create JWT token - IMPORTANT: Convert user ID to string
+            access_token = create_access_token(
+                identity=str(usuario.id),  # Convert to string!
+                additional_claims={
+                    'username': usuario.username,
+                    # Add any other claims you need
+                }
+            )
+            
+            return {
+                'access_token': access_token,
+                'token_type': 'Bearer'
+            }, 200
         
         return {'message': 'Credenciales inválidas'}, 401
-    
+
+
 class RegisterResource(Resource):
     def post(self):
         parser = reqparse.RequestParser()
-        parser.add_argument('username', type=str, required=True)
-        parser.add_argument('password', type=str, required=True)
-        args = parser.parse_args()
-
-        # Verifica si el usuario ya existe
-        if User.query.filter_by(username=args['username']).first():
+        parser.add_argument('username', type=str, required=True, help='El nombre de usuario es requerido')
+        parser.add_argument('password', type=str, required=True, help='La contraseña es requerida')
+        
+        data = parser.parse_args()
+        
+        # Check if username is already taken
+        if Users.query.filter_by(username=data['username']).first():
             return {'message': 'El nombre de usuario ya está en uso'}, 400
-
-        # Crea un nuevo usuario
-        hashed_password = generate_password_hash(args['password'])
-        nuevo_usuario = User(username=args['username'], password=hashed_password)
-        db.session.add(nuevo_usuario)
-        db.session.commit()
-
-        return {'message': 'Usuario registrado exitosamente'}, 201
+        
+        # Create new user
+        nuevo_usuario = Users(
+            username=data['username'],
+            password=generate_password_hash(data['password'])
+        )
+        
+        try:
+            db.session.add(nuevo_usuario)
+            db.session.commit()
+            return {'message': 'Users registrado exitosamente'}, 201
+        except Exception as e:
+            db.session.rollback()
+            return {'message': 'Error al registrar el usuario', 'error': str(e)}, 500

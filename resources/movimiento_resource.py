@@ -4,25 +4,31 @@ from flask import request
 from models import Movimiento
 from schemas import movimiento_schema, movimientos_schema
 from extensions import db
+from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class MovimientoResource(Resource):
+    @jwt_required()
+    @handle_db_errors
     def get(self, movimiento_id=None):
         if movimiento_id:
             movimiento = Movimiento.query.get_or_404(movimiento_id)
             return movimiento_schema.dump(movimiento), 200
         
         page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        movimientos_paginados = Movimiento.query.paginate(page=page, per_page=limit)
+        per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
+        movimientos = Movimiento.query.paginate(page=page, per_page=per_page, error_out=False)
         return {
-            "total": movimientos_paginados.total,
-            "pagina": movimientos_paginados.page,
-            "por_pagina": movimientos_paginados.per_page,
-            "total_paginas": movimientos_paginados.pages,
-            "data": movimientos_schema.dump(movimientos_paginados.items)
+            "data": movimientos_schema.dump(movimientos.items),
+            "pagination": {
+                "total": movimientos.total,
+                "page": movimientos.page,
+                "per_page": movimientos.per_page,
+                "pages": movimientos.pages
+            }
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
         nuevo_movimiento = movimiento_schema.load(request.get_json())
         db.session.add(nuevo_movimiento)
@@ -30,6 +36,7 @@ class MovimientoResource(Resource):
         return movimiento_schema.dump(nuevo_movimiento), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, movimiento_id):
         movimiento = Movimiento.query.get_or_404(movimiento_id)
         updated_movimiento = movimiento_schema.load(
@@ -41,6 +48,7 @@ class MovimientoResource(Resource):
         return movimiento_schema.dump(updated_movimiento), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, movimiento_id):
         movimiento = Movimiento.query.get_or_404(movimiento_id)
         db.session.delete(movimiento)

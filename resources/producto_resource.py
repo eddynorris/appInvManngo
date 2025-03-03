@@ -5,23 +5,27 @@ from models import Producto
 from schemas import producto_schema, productos_schema
 from extensions import db
 from decimal import Decimal
+from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class ProductoResource(Resource):
+    @jwt_required()
     def get(self, producto_id=None):
         if producto_id:
             producto = Producto.query.get_or_404(producto_id)
             return producto_schema.dump(producto), 200
         
         page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        productos_paginados = Producto.query.paginate(page=page, per_page=limit)
+        per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
+        productos = Producto.query.paginate(page=page, per_page=per_page, error_out=False)
 
         return {
-            "total": productos_paginados.total,
-            "pagina": productos_paginados.page,
-            "por_pagina": productos_paginados.per_page,
-            "total_paginas": productos_paginados.pages,
-            "data": productos_schema.dump(productos_paginados.items)
+            "data": producto_schema.dump(productos.items),
+            "pagination": {
+                "total": productos.total,
+                "page": productos.page,
+                "per_page": productos.per_page,
+                "pages": productos.pages            
+            }
         }, 200
 
     @jwt_required()
@@ -32,7 +36,7 @@ class ProductoResource(Resource):
         db.session.commit()
         return producto_schema.dump(nuevo_producto), 201
 
-    ##@jwt_required()
+    @jwt_required()
     def put(self, producto_id):
         # Obtiene el producto existente de la base de datos
         producto = Producto.query.get_or_404(producto_id)
@@ -50,6 +54,7 @@ class ProductoResource(Resource):
         # Serializa y devuelve la respuesta
         return producto_schema.dump(updated_producto), 200
  
+    @jwt_required()
     def delete(self, producto_id):
         producto = Producto.query.get_or_404(producto_id)
         db.session.delete(producto)

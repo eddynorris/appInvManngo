@@ -4,7 +4,7 @@ from datetime import datetime
 from extensions import db 
 
 # Tabla de Usuarios (para autenticación JWT)
-class User(db.Model):
+class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(256), nullable=False)
@@ -16,13 +16,8 @@ class Producto(db.Model):
     nombre = db.Column(db.String(255), nullable=False)
     descripcion = db.Column(db.Text)
     precio_compra = db.Column(db.Numeric(12, 2), nullable=False)
-    precio_venta = db.Column(db.Numeric(12, 2), nullable=False)
-    stock = db.Column(db.Integer, nullable=False, default=0)
-    stock_minimo = db.Column(db.Integer, nullable=False, default=5)
+    activo = db.Column(db.Boolean, default=True)  # Indica si el producto está disponible
     created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow)
-    
-    # Relación con movimientos
-    movimientos = db.relationship('Movimiento', backref='producto', lazy=True)
 
     def __repr__(self):
         return f'<Producto {self.nombre}>'
@@ -35,11 +30,24 @@ class Almacen(db.Model):
     direccion = db.Column(db.Text)
     ciudad = db.Column(db.String(100))
 
-    # Relación con movimientos
-    movimientos = db.relationship('Movimiento', backref='almacen', lazy=True)
+    # Relación con iunventario
+    inventario = db.relationship('Inventario', backref='almacen', lazy=True)
 
     def __repr__(self):
         return f'<Almacen {self.nombre}>'
+
+# Tabla de inventario (stock por almacén)
+class Inventario(db.Model):
+    __tablename__ = 'inventario'
+    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
+    almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), primary_key=True)
+    cantidad = db.Column(db.Integer, nullable=False, default=0)
+    stock_minimo = db.Column(db.Integer, nullable=False, default=5)
+    ultima_actualizacion = db.Column(db.TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('producto_id', 'almacen_id', name='uq_producto_almacen'),
+    )
 
 # Modelo para la tabla clientes
 class Cliente(db.Model):
@@ -48,25 +56,38 @@ class Cliente(db.Model):
     nombre = db.Column(db.String(255), nullable=False)
     telefono = db.Column(db.String(20))
     direccion = db.Column(db.Text)
-    saldo_pendiente = db.Column(db.Numeric(12, 2), default=0)
     created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow)
-
-    # Relación con ventas
     ventas = db.relationship('Venta', backref='cliente', lazy=True)
+
+    @property
+    def saldo_pendiente(self):
+        return sum(v.total for v in self.ventas if v.estado_pago != 'pagado')
 
     def __repr__(self):
         return f'<Cliente {self.nombre}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'telefono': self.telefono,
+            'direccion': self.direccion,
+            'saldo_pendiente': str(self.saldo_pendiente),
+            'created_at': self.created_at.isoformat()
+        }
 
 # Modelo para la tabla ventas
 class Venta(db.Model):
     __tablename__ = 'ventas'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), nullable=False)
+    almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), nullable=False)
     fecha = db.Column(db.TIMESTAMP, default=datetime.utcnow)
     total = db.Column(db.Numeric(12, 2), nullable=False)
     tipo_pago = db.Column(db.String(10), nullable=False)
-    fecha_vencimiento = db.Column(db.Date)
     estado_pago = db.Column(db.String(15), default='pendiente')
+
+    detalles = db.relationship('VentaDetalle', backref='venta', lazy=True)
 
     # Restricciones
     __table_args__ = (
@@ -74,11 +95,28 @@ class Venta(db.Model):
         CheckConstraint("estado_pago IN ('pendiente', 'parcial', 'pagado')")
     )
 
-    # Relación con movimientos
-    movimientos = db.relationship('Movimiento', backref='venta', lazy=True)
-
     def __repr__(self):
         return f'<Venta {self.id}>'
+    
+class VentaCredito(db.Model):
+    __tablename__ = 'ventas_credito'
+    venta_id = db.Column(db.Integer, db.ForeignKey('ventas.id', ondelete='CASCADE'), primary_key=True)
+    fecha_vencimiento = db.Column(db.Date, nullable=False)
+    monto_pagado = db.Column(db.Numeric(12, 2), default=0)
+    estado_pago = db.Column(db.String(15), default='pendiente')
+
+    venta = db.relationship('Venta', backref='credito')
+
+# Detalle de ventas (productos vendidos)
+class VentaDetalle(db.Model):
+    __tablename__ = 'venta_detalles'
+    id = db.Column(db.Integer, primary_key=True)
+    venta_id = db.Column(db.Integer, db.ForeignKey('ventas.id', ondelete='CASCADE'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
+    cantidad = db.Column(db.Integer, nullable=False)
+    fecha_reabastecimiento = db.Column(db.Date)  # Fecha estimada para nuevo pedido
+
+    producto = db.relationship('Producto')
 
 # Modelo para la tabla movimientos
 class Movimiento(db.Model):
@@ -86,20 +124,32 @@ class Movimiento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
     almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), nullable=False)
-    venta_id = db.Column(db.Integer, db.ForeignKey('ventas.id', ondelete='CASCADE'))
+    venta_id = db.Column(db.Integer, db.ForeignKey('ventas.id', ondelete='SET NULL'))
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedores.id', ondelete='SET NULL'))
     cantidad = db.Column(db.Numeric(12, 2), nullable=False)
-    precio_venta = db.Column(db.Numeric(12, 2), nullable=False)  # Precio histórico
     tipo = db.Column(db.String(10), nullable=False)
     fecha = db.Column(db.TIMESTAMP, default=datetime.utcnow)
 
-    # Restricciones
     __table_args__ = (
         CheckConstraint("cantidad > 0"),
         CheckConstraint("tipo IN ('entrada', 'salida')")
     )
 
+    producto = db.relationship('Producto')
+    almacen = db.relationship('Almacen')
+    venta = db.relationship('Venta')
+    proveedor = db.relationship('Proveedor')
+
+class Proveedor(db.Model):
+    __tablename__ = 'proveedores'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(255), nullable=False)
+    telefono = db.Column(db.String(20))
+    direccion = db.Column(db.Text)
+    created_at = db.Column(db.TIMESTAMP, default=datetime.utcnow)
+
     def __repr__(self):
-        return f'<Movimiento {self.id}>'
+        return f'<Proveedor {self.nombre}>'
 
 # Modelo para la tabla gastos
 class Gasto(db.Model):
@@ -112,3 +162,6 @@ class Gasto(db.Model):
 
     def __repr__(self):
         return f'<Gasto {self.id}>'
+    
+
+

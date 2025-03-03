@@ -4,45 +4,54 @@ from flask import request
 from models import Almacen
 from schemas import almacen_schema, almacenes_schema
 from extensions import db
+from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class AlmacenResource(Resource):
+    @jwt_required()
+    @handle_db_errors
     def get(self, almacen_id=None):
         if almacen_id:
             almacen = Almacen.query.get_or_404(almacen_id)
             return almacen_schema.dump(almacen), 200
         
         page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        almacenes_paginados = Almacen.query.paginate(page=page, per_page=limit)
+        per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
+        almacenes = Almacen.query.paginate(page=page, per_page=per_page, error_out=False)
+        
         return {
-            "total": almacenes_paginados.total,
-            "pagina": almacenes_paginados.page,
-            "por_pagina": almacenes_paginados.per_page,
-            "total_paginas": almacenes_paginados.pages,
-            "data": almacenes_schema.dump(almacenes_paginados.items)
+            "data": almacenes_schema.dump(almacenes.items),
+            "pagination": {
+                "total": almacenes.total,
+                "page": almacenes.page,
+                "per_page": almacenes.per_page,
+                "pages": almacenes.pages
+            }
         }, 200
 
     @jwt_required()
+    @handle_db_errors
     def post(self):
-        nuevo_almacen = almacen_schema.load(request.get_json())
-        db.session.add(nuevo_almacen)
+        data = almacen_schema.load(request.get_json())
+        db.session.add(data)
         db.session.commit()
-        return almacen_schema.dump(nuevo_almacen), 201
+        return almacen_schema.dump(data), 201
 
     @jwt_required()
+    @handle_db_errors
     def put(self, almacen_id):
         almacen = Almacen.query.get_or_404(almacen_id)
-        updated_almacen = almacen_schema.load(
-            request.get_json(),
-            instance=almacen,
-            partial=True
-        )
+        data = almacen_schema.load(request.get_json(), partial=True)
+        
+        for key, value in data.items():
+            setattr(almacen, key, value)
+            
         db.session.commit()
-        return almacen_schema.dump(updated_almacen), 200
+        return almacen_schema.dump(almacen), 200
 
     @jwt_required()
+    @handle_db_errors
     def delete(self, almacen_id):
         almacen = Almacen.query.get_or_404(almacen_id)
         db.session.delete(almacen)
         db.session.commit()
-        return {"message": "Almacén eliminado"}, 204
+        return "", 204
