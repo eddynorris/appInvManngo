@@ -1,16 +1,28 @@
 from marshmallow import Schema, fields, EXCLUDE
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from decimal import Decimal
-from models import Users, Producto, Almacen, Cliente, Gasto, Movimiento, Venta, VentaDetalle, Proveedor, VentaCredito
+from models import Users, Producto, Almacen, Cliente, Gasto, Movimiento, Venta, VentaDetalle, Proveedor, Pago, Inventario
 from extensions import db
+
+# Esquema para el modelo Almacen
+class AlmacenSchema(SQLAlchemyAutoSchema):
+    class Meta:
+        model = Almacen
+        load_instance = True
+        include_fk = True
+        unknown = EXCLUDE
+        sqla_session = db.session
 
 # Esquema para el modelo User
 class UserSchema(SQLAlchemyAutoSchema):
+    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"), dump_only=True)
+
     class Meta:
         model = Users
         load_instance = True  # Permite cargar instancias del modelo
         include_fk = True  # Incluye claves foráneas
         unknown = EXCLUDE  # Ignora campos desconocidos
+
     
 # Esquema para el modelo Proveedor
 class ProveedorSchema(SQLAlchemyAutoSchema):
@@ -27,15 +39,6 @@ class ProductoSchema(SQLAlchemyAutoSchema):
 
     class Meta:
         model = Producto
-        load_instance = True
-        include_fk = True
-        unknown = EXCLUDE
-        sqla_session = db.session
-
-# Esquema para el modelo Almacen
-class AlmacenSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = Almacen
         load_instance = True
         include_fk = True
         unknown = EXCLUDE
@@ -77,27 +80,30 @@ class MovimientoSchema(SQLAlchemyAutoSchema):
         unknown = EXCLUDE
         sqla_session = db.session
 
-# Esquema para el modelo Venta
-class VentaSchema(SQLAlchemyAutoSchema):
-    cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))  # Solo incluye ID y nombre del cliente
-    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))  # Solo incluye ID y nombre del almacén
-    detalles = fields.List(fields.Nested("VentaDetalleSchema"))  # Lista de detalles de venta
-    credito = fields.Nested("VentaCreditoSchema", allow_none=True)  # Relación opcional con ventas a crédito
-    total = fields.Decimal(as_string=True)
-
+# Esquema para el modelo PagoSchema
+class PagoSchema(SQLAlchemyAutoSchema):
+    monto = fields.Decimal(as_string=True, dump_only=True)  # Calculado dinámicamente
     class Meta:
-        model = Venta
+        model = Pago
         load_instance = True
         include_fk = True
         unknown = EXCLUDE
         sqla_session = db.session
 
-# Esquema para el modelo VentaCredito
-class VentaCreditoSchema(SQLAlchemyAutoSchema):
-    venta = fields.Nested(VentaSchema, only=("id", "total"))  # Relación con la venta
+# Esquema para el modelo Venta
+class VentaSchema(SQLAlchemyAutoSchema):
+    cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))  # Solo incluye ID y nombre del cliente
+    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))  # Solo incluye ID y nombre del almacén
+    pagos = fields.List(fields.Nested(PagoSchema()), dump_only=True)  # Lista de pagos
+    
+    detalles = fields.List(fields.Nested("VentaDetalleSchema"))  # Lista de detalles de venta
+    monto_pagado = fields.Decimal(as_string=True, dump_only=True)  # Campo calculado
+    saldo_pendiente = fields.Decimal(as_string=True, dump_only=True)  # Campo calculado
+    
+    total = fields.Decimal(as_string=True)
 
     class Meta:
-        model = VentaCredito
+        model = Venta
         load_instance = True
         include_fk = True
         unknown = EXCLUDE
@@ -140,8 +146,8 @@ movimientos_schema = MovimientoSchema(many=True)
 venta_schema = VentaSchema()
 ventas_schema = VentaSchema(many=True)
 
-venta_credito_schema = VentaCreditoSchema()
-ventas_credito_schema = VentaCreditoSchema(many=True)
+pago_schema = PagoSchema()
+pagos_schema = PagoSchema(many=True)
 
 venta_detalle_schema = VentaDetalleSchema()
 ventas_detalle_schema = VentaDetalleSchema(many=True)

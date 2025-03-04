@@ -9,6 +9,14 @@ class Users(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(256), nullable=False)
 
+    rol = db.Column(db.String(20), nullable=False, default='usuario')  # Valores: 'admin', 'gerente', 'usuario'
+    almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='SET NULL'), nullable=True)
+    # Relación con almacén
+    almacen = db.relationship('Almacen', backref=db.backref('usuarios', lazy=True))
+
+    def __repr__(self):
+        return f'<User {self.username}>'
+
 # Modelo para la tabla productos
 class Producto(db.Model):
     __tablename__ = 'productos'
@@ -65,16 +73,6 @@ class Cliente(db.Model):
 
     def __repr__(self):
         return f'<Cliente {self.nombre}>'
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'nombre': self.nombre,
-            'telefono': self.telefono,
-            'direccion': self.direccion,
-            'saldo_pendiente': str(self.saldo_pendiente),
-            'created_at': self.created_at.isoformat()
-        }
 
 # Modelo para la tabla ventas
 class Venta(db.Model):
@@ -88,6 +86,7 @@ class Venta(db.Model):
     estado_pago = db.Column(db.String(15), default='pendiente')
 
     detalles = db.relationship('VentaDetalle', backref='venta', lazy=True)
+    pagos = db.relationship("Pago", backref="venta", lazy=True, cascade="all, delete-orphan")
 
     # Restricciones
     __table_args__ = (
@@ -95,17 +94,34 @@ class Venta(db.Model):
         CheckConstraint("estado_pago IN ('pendiente', 'parcial', 'pagado')")
     )
 
+    # Campos calculados (no se almacenan en la DB)
+    @property
+    def monto_pagado(self):
+        return sum(pago.monto for pago in self.pagos)  # Suma de todos los pagos
+
+    @property
+    def saldo_pendiente(self):
+        return self.total - self.monto_pagado
+
+    def actualizar_estado(self):
+        if self.saldo_pendiente <= 0:
+            self.estado_pago = "pagado"
+        elif self.monto_pagado > 0:
+            self.estado_pago = "parcial"
+        else:
+            self.estado_pago = "pendiente"
+
     def __repr__(self):
         return f'<Venta {self.id}>'
     
-class VentaCredito(db.Model):
-    __tablename__ = 'ventas_credito'
-    venta_id = db.Column(db.Integer, db.ForeignKey('ventas.id', ondelete='CASCADE'), primary_key=True)
-    fecha_vencimiento = db.Column(db.Date, nullable=False)
-    monto_pagado = db.Column(db.Numeric(12, 2), default=0)
-    estado_pago = db.Column(db.String(15), default='pendiente')
-
-    venta = db.relationship('Venta', backref='credito')
+class Pago(db.Model):
+    __tablename__ = "pagos"
+    id = db.Column(db.Integer, primary_key=True)
+    venta_id = db.Column(db.Integer, db.ForeignKey("ventas.id", ondelete="CASCADE"), nullable=False)
+    monto = db.Column(db.Numeric(12, 2), nullable=False) 
+    fecha = db.Column(db.TIMESTAMP, default=datetime.utcnow)
+    metodo_pago = db.Column(db.String(20))  # "efectivo", "transferencia", "tarjeta"
+    referencia = db.Column(db.String(50))  # Número de transacción o comprobante
 
 # Detalle de ventas (productos vendidos)
 class VentaDetalle(db.Model):

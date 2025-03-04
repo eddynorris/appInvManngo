@@ -7,9 +7,11 @@ from resources.producto_resource import ProductoResource
 from resources.proveedor_resource import ProveedorResource
 from resources.almacen_resource import AlmacenResource
 from resources.cliente_resource import ClienteResource
+from resources.pago_resource import PagoResource
 from resources.gasto_resource import GastoResource
 from resources.movimiento_resource import MovimientoResource
 from resources.venta_resource import VentaResource
+from resources.user_resource import UserResource
 from extensions import db, jwt  # Importa la instancia de SQLAlchemy
 import os
 import logging
@@ -84,7 +86,9 @@ def handle_internal_server_error(e):
 # Registrar recursos
 api.add_resource(AuthResource, '/auth')
 api.add_resource(RegisterResource, '/registrar')
+api.add_resource(UserResource, '/usuarios', '/usuarios/<int:user_id>')
 api.add_resource(ProductoResource, '/productos', '/productos/<int:producto_id>')
+api.add_resource(PagoResource, '/pago', '/pago/<int:pago_id>')
 api.add_resource(ProveedorResource, '/proveedores', '/proveedores/<int:proveedor_id>')
 api.add_resource(AlmacenResource, '/almacenes', '/almacenes/<int:almacen_id>')
 api.add_resource(ClienteResource, '/clientes', '/clientes/<int:cliente_id>')
