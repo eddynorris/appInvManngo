@@ -12,6 +12,11 @@ from resources.gasto_resource import GastoResource
 from resources.movimiento_resource import MovimientoResource
 from resources.venta_resource import VentaResource
 from resources.user_resource import UserResource
+from resources.inventario_resource import InventarioResource
+from resources.lote_resource import LoteResource
+from resources.merma_resource import MermaResource
+from resources.presentacion_resource import PresentacionProductoResource
+
 from extensions import db, jwt  # Importa la instancia de SQLAlchemy
 import os
 import logging
@@ -29,7 +34,7 @@ app = Flask(__name__)
 # Configuración de CORS
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:123456@localhost/db_manngo'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:123456@localhost/manngo_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Generate a secure secret key (do this only once and then store it)
@@ -88,13 +93,15 @@ api.add_resource(AuthResource, '/auth')
 api.add_resource(RegisterResource, '/registrar')
 api.add_resource(UserResource, '/usuarios', '/usuarios/<int:user_id>')
 api.add_resource(ProductoResource, '/productos', '/productos/<int:producto_id>')
-api.add_resource(PagoResource, '/pago', '/pago/<int:pago_id>')
+api.add_resource(PagoResource, '/pagos', '/pago/<int:pago_id>')
 api.add_resource(ProveedorResource, '/proveedores', '/proveedores/<int:proveedor_id>')
 api.add_resource(AlmacenResource, '/almacenes', '/almacenes/<int:almacen_id>')
 api.add_resource(ClienteResource, '/clientes', '/clientes/<int:cliente_id>')
 api.add_resource(GastoResource, '/gastos', '/gastos/<int:gasto_id>')
 api.add_resource(MovimientoResource, '/movimientos', '/movimientos/<int:movimiento_id>')
 api.add_resource(VentaResource, '/ventas', '/ventas/<int:venta_id>')
+api.add_resource(InventarioResource, '/inventario', '/inventario/<int:inventario_id>')
+api.add_resource(LoteResource, '/lotes', '/lotes/<int:lote_id>')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

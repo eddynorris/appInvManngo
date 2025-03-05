@@ -15,6 +15,6 @@ __all__ = [
     'ClienteResource',
     'GastoResource',
     'MovimientoResource',
-    'VentaResource'
-    
+    'VentaResource',
+    'PagoResource'
 ]

@@ -1,58 +1,74 @@
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import VentaDetalle
-from schemas import venta_detalle_schema , ventas_detalle_schema
+from models import Venta, VentaDetalle, Inventario, PresentacionProducto
+from schemas import venta_schema, ventas_schema, venta_detalle_schema
 from extensions import db
-from common import handle_db_errors, MAX_ITEMS_PER_PAGE
-
+from common import handle_db_errors, MAX_ITEMS_PER_PAGE, mismo_almacen_o_admin
 
 class VentaDetalleResource(Resource):
     @jwt_required()
     @handle_db_errors
-    def get(self, detalle_id=None):
-        if detalle_id:
-            detalle = VentaDetalle.query.get_or_404(detalle_id)
-            return venta_detalle_schema.dump(detalle), 200
-        
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        detalles = VentaDetalle.query.paginate(page=page, per_page=per_page, error_out=False)
-        return {
-            "data": venta_detalle_schema.dump(detalles.items),
-            "pagination": {
-                "total": detalles.total,
-                "page": detalles.page,
-                "per_page": detalles.per_page,
-                "pages": detalles.pages            
-            }        
-        }, 200        
+    def get(self, venta_id):
+        detalles = VentaDetalle.query.filter_by(venta_id=venta_id).all()
+        return venta_detalle_schema.dump(detalles), 200
 
     @jwt_required()
+    @mismo_almacen_o_admin
     @handle_db_errors
-    def post(self):
-        nuevo_detalle = venta_detalle_schema.load(request.get_json())
+    def post(self, venta_id):
+        venta = Venta.query.get_or_404(venta_id)
+        data = venta_detalle_schema.load(request.get_json())
+        
+        # Validar presentación y stock
+        presentacion = PresentacionProducto.query.get_or_404(data["presentacion_id"])
+        inventario = Inventario.query.filter_by(
+            presentacion_id=presentacion.id,
+            almacen_id=venta.almacen_id
+        ).first()
+        
+        if not inventario or inventario.cantidad < data["cantidad"]:
+            return {
+                "error": f"Stock insuficiente para {presentacion.nombre}",
+                "stock_disponible": inventario.cantidad if inventario else 0
+            }, 400
+        
+        # Crear detalle
+        nuevo_detalle = VentaDetalle(
+            venta_id=venta_id,
+            presentacion_id=presentacion.id,
+            cantidad=data["cantidad"],
+            precio_unitario=presentacion.precio_venta
+        )
+        
+        # Actualizar venta y stock
+        venta.total += nuevo_detalle.precio_unitario * nuevo_detalle.cantidad
+        inventario.cantidad -= nuevo_detalle.cantidad
+        
         db.session.add(nuevo_detalle)
         db.session.commit()
+        
         return venta_detalle_schema.dump(nuevo_detalle), 201
 
-
     @jwt_required()
-    @handle_db_errors
-    def put(self, detalle_id):
-        detalle = VentaDetalle.query.get_or_404(detalle_id)
-        updated_detalle = venta_detalle_schema.load(
-            request.get_json(),
-            instance=detalle,
-            partial=True
-        )
-        db.session.commit()
-        return venta_detalle_schema.dump(updated_detalle), 200
-
-    @jwt_required()
+    @mismo_almacen_o_admin
     @handle_db_errors
     def delete(self, detalle_id):
         detalle = VentaDetalle.query.get_or_404(detalle_id)
+        venta = detalle.venta
+        
+        # Revertir stock
+        inventario = Inventario.query.filter_by(
+            presentacion_id=detalle.presentacion_id,
+            almacen_id=venta.almacen_id
+        ).first()
+        inventario.cantidad += detalle.cantidad
+        
+        # Actualizar total de la venta
+        venta.total -= detalle.precio_unitario * detalle.cantidad
+        venta.actualizar_estado()
+        
         db.session.delete(detalle)
         db.session.commit()
-        return {"message": "Detalle de venta eliminado"}, 204
+        
+        return "", 204

@@ -1,65 +1,77 @@
-from flask_restful import Resource, abort
+# ARCHIVO: cliente_resource.py
+from flask_restful import Resource
 from flask_jwt_extended import jwt_required
 from flask import request
-from models import Cliente, Producto
-from schemas import cliente_schema, clientes_schema, producto_schema, productos_schema
+from models import Cliente
+from schemas import cliente_schema, clientes_schema
 from extensions import db
-from marshmallow import ValidationError
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
 class ClienteResource(Resource):
     @jwt_required()
     @handle_db_errors
     def get(self, cliente_id=None):
+        """
+        Obtiene cliente(s)
+        - Con ID: Detalle completo con saldo pendiente
+        - Sin ID: Lista paginada con filtros (nombre, teléfono)
+        """
         if cliente_id:
-            cliente = Cliente.query.get_or_404(cliente_id)
-            return cliente_schema.dump(cliente), 200
+            return cliente_schema.dump(Cliente.query.get_or_404(cliente_id)), 200
         
+        # Construir query con filtros
+        query = Cliente.query
+        if nombre := request.args.get('nombre'):
+            query = query.filter(Cliente.nombre.ilike(f'%{nombre}%'))
+        if telefono := request.args.get('telefono'):
+            query = query.filter(Cliente.telefono == telefono)
+
+        # Paginación
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
+        resultado = query.paginate(page=page, per_page=per_page, error_out=False)
         
-        clientes = Cliente.query.paginate(page=page, per_page=per_page, error_out=False)
         return {
-            "data": clientes_schema.dump(clientes.items),
+            "data": clientes_schema.dump(resultado.items),
             "pagination": {
-                "total": clientes.total,
-                "page": clientes.page,
-                "per_page": clientes.per_page,
-                "pages": clientes.pages
+                "total": resultado.total,
+                "page": resultado.page,
+                "per_page": resultado.per_page,
+                "pages": resultado.pages
             }
         }, 200
 
     @jwt_required()
     @handle_db_errors
     def post(self):
-        data = cliente_schema.load(request.get_json())
-        db.session.add(data)
+        """Crea nuevo cliente con validación de datos"""
+        nuevo_cliente = cliente_schema.load(request.get_json())
+        db.session.add(nuevo_cliente)
         db.session.commit()
-        
-        return cliente_schema.dump(data), 201
+        return cliente_schema.dump(nuevo_cliente), 201
 
     @jwt_required()
     @handle_db_errors
     def put(self, cliente_id):
-        # Obtiene el producto existente de la base de datos
+        """Actualiza cliente existente con validación parcial"""
         cliente = Cliente.query.get_or_404(cliente_id)
-        # Deserializa los datos recibidos y actualiza la instancia del producto
-        updated_cliente = cliente_schema.load(
+        cliente_actualizado = cliente_schema.load(
             request.get_json(),
-            instance=cliente,  # Actualiza la instancia existente
-            partial=True        # Permite actualizar solo algunos campos
+            instance=cliente,
+            partial=True
         )
-        # Guarda los cambios en la base de datos
         db.session.commit()
-        # Serializa y devuelve la respuesta
-        return cliente_schema.dump(updated_cliente), 200
-
+        return cliente_schema.dump(cliente_actualizado), 200
 
     @jwt_required()
     @handle_db_errors
     def delete(self, cliente_id):
+        """Elimina cliente solo si no tiene ventas asociadas"""
         cliente = Cliente.query.get_or_404(cliente_id)
         
+        if cliente.ventas:
+            return {"error": "No se puede eliminar cliente con historial de ventas"}, 400
+            
         db.session.delete(cliente)
         db.session.commit()
-        return "", 204  # 204 No Content
+        return "", 204

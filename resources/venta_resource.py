@@ -1,10 +1,12 @@
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Venta, VentaDetalle, VentaCredito
-from schemas import venta_schema, ventas_schema, venta_detalle_schema, venta_credito_schema
+from models import Venta, VentaDetalle, Inventario, Cliente, PresentacionProducto
+from schemas import venta_schema, ventas_schema, venta_detalle_schema
 from extensions import db
-from common import handle_db_errors, MAX_ITEMS_PER_PAGE
+from common import handle_db_errors, MAX_ITEMS_PER_PAGE, mismo_almacen_o_admin
+from datetime import datetime, timezone
+from decimal import Decimal
 
 class VentaResource(Resource):
     @jwt_required()
@@ -14,95 +16,153 @@ class VentaResource(Resource):
             venta = Venta.query.get_or_404(venta_id)
             return venta_schema.dump(venta), 200
         
+        # Filtros: cliente_id, almacen_id, fecha_inicio, fecha_fin
+        filters = {
+            "cliente_id": request.args.get('cliente_id'),
+            "almacen_id": request.args.get('almacen_id'),
+            "fecha_inicio": request.args.get('fecha_inicio'),
+            "fecha_fin": request.args.get('fecha_fin')
+        }
+        
+        query = Venta.query
+        
+        # Aplicar filtros
+        if filters["cliente_id"]:
+            query = query.filter_by(cliente_id=filters["cliente_id"])
+        if filters["almacen_id"]:
+            query = query.filter_by(almacen_id=filters["almacen_id"])
+        if filters["fecha_inicio"] and filters["fecha_fin"]:
+            try:
+                # Asegurando formato ISO y manejar zonas horarias
+                fecha_inicio = datetime.fromisoformat(filters["fecha_inicio"]).replace(tzinfo=timezone.utc)
+                fecha_fin = datetime.fromisoformat(filters["fecha_fin"]).replace(tzinfo=timezone.utc)
+                query = query.filter(Venta.fecha.between(fecha_inicio, fecha_fin))
+            except ValueError as e:
+                # Manejar error de formato inválido
+                return {"error": "Formato de fecha inválido. Usa ISO 8601 (ej: '2025-03-05T00:00:00')"}, 400
+        
+       
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        ventas = Venta.query.paginate(page=page, per_page=per_page, error_out=False)
+        ventas = query.paginate(page=page, per_page=per_page)
+        
         return {
             "data": ventas_schema.dump(ventas.items),
             "pagination": {
                 "total": ventas.total,
                 "page": ventas.page,
                 "per_page": ventas.per_page,
-                "pages": ventas.pages            
-            }        
+                "pages": ventas.pages
+            }
         }, 200
 
     @jwt_required()
+    @mismo_almacen_o_admin
     @handle_db_errors
     def post(self):
-        data = request.get_json()
-        detalles = data.pop("detalles", [])
-
-        nueva_venta = venta_schema.load(data)
+        data = venta_schema.load(request.get_json())
+        almacen_id = data["almacen_id"]
+        
+        # Validar cliente y almacén
+        Cliente.query.get_or_404(data["cliente_id"])
+        almacen = Almacen.query.get_or_404(almacen_id)
+        
+        total = Decimal(0)
+        detalles = []
+        
+        # Procesar cada detalle de venta
+        for detalle_data in data["detalles"]:
+            presentacion = PresentacionProducto.query.get_or_404(detalle_data["presentacion_id"])
+            
+            # Verificar stock en inventario
+            inventario = Inventario.query.filter_by(
+                presentacion_id=presentacion.id,
+                almacen_id=almacen_id
+            ).first()
+            
+            if not inventario or inventario.cantidad < detalle_data["cantidad"]:
+                return {
+                    "error": f"Stock insuficiente para {presentacion.nombre}",
+                    "presentacion_id": presentacion.id,
+                    "stock_disponible": inventario.cantidad if inventario else 0
+                }, 400
+            
+            # Calcular subtotal y actualizar total
+            subtotal = presentacion.precio_venta * detalle_data["cantidad"]
+            total += subtotal
+            
+            # Preparar detalle
+            detalles.append({
+                "presentacion_id": presentacion.id,
+                "cantidad": detalle_data["cantidad"],
+                "precio_unitario": presentacion.precio_venta,
+                "subtotal": subtotal
+            })
+        
+        # Crear venta
+        nueva_venta = Venta(
+            cliente_id=data["cliente_id"],
+            almacen_id=almacen_id,
+            total=total,
+            tipo_pago=data["tipo_pago"],
+            consumo_diario_kg=data.get("consumo_diario_kg"),
+            detalles=[VentaDetalle(**d) for d in detalles]
+        )
+        
+        # Actualizar stock y proyección de cliente
+        for detalle in nueva_venta.detalles:
+            inventario = Inventario.query.filter_by(
+                presentacion_id=detalle.presentacion_id,
+                almacen_id=almacen_id
+            ).first()
+            inventario.cantidad -= detalle.cantidad
+        
+        if nueva_venta.consumo_diario_kg:
+            cliente = Cliente.query.get(data["cliente_id"])
+            cliente.ultima_fecha_compra = datetime.utcnow()
+            cliente.frecuencia_compra_dias = total / Decimal(nueva_venta.consumo_diario_kg)
+        
         db.session.add(nueva_venta)
         db.session.commit()
-
-
-        # Guardar detalles de la venta
-        for detalle_data in detalles:
-            detalle = venta_detalle_schema.load({
-                "venta_id": nueva_venta.id,
-                **detalle_data
-            })
-            db.session.add(detalle)
-
-        # Si es una venta a crédito, guardar los datos de crédito
-        if nueva_venta.tipo_pago == "credito":
-            credito_data = data.get("credito", {})
-            credito = venta_credito_schema.load({
-                "venta_id": nueva_venta.id,
-                **credito_data
-            })
-            db.session.add(credito)
-
-        db.session.commit()
-        # Reload the venta to get all related data
-        venta_completa = Venta.query.get(nueva_venta.id)
-        return venta_schema.dump(venta_completa), 201
+        
+        return venta_schema.dump(nueva_venta), 201
 
     @jwt_required()
+    @mismo_almacen_o_admin
     @handle_db_errors
     def put(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
-        data = request.get_json()
-        updated_venta = venta_schema.load(
-            data,
-            instance=venta,
-            partial=True
-        )
-
-        # Actualizar detalles de la venta
-        if "detalles" in data:
-            for detalle_data in data["detalles"]:
-                detalle = VentaDetalle.query.filter_by(venta_id=venta_id, producto_id=detalle_data["producto_id"]).first()
-                if detalle:
-                    venta_detalle_schema.load(detalle_data, instance=detalle, partial=True)
-                else:
-                    nuevo_detalle = venta_detalle_schema.load({
-                        "venta_id": venta_id,
-                        **detalle_data
-                    })
-                    db.session.add(nuevo_detalle)
-
-        # Actualizar datos de crédito si existe
-        if venta.tipo_pago == "credito" and "credito" in data:
-            credito = venta.credito
-            if credito:
-                venta_credito_schema.load(data["credito"], instance=credito, partial=True)
-            else:
-                nuevo_credito = venta_credito_schema.load({
-                    "venta_id": venta_id,
-                    **data["credito"]
-                })
-                db.session.add(nuevo_credito)
-
+        data = venta_schema.load(request.get_json(), partial=True)
+        
+        # Campos inmutables
+        if "almacen_id" in data and data["almacen_id"] != venta.almacen_id:
+            return {"error": "No se puede modificar el almacén de una venta"}, 400
+        
+        # Actualizar campos permitidos (ej: estado_pago, consumo_diario_kg)
+        for key, value in data.items():
+            if key in ["estado_pago", "consumo_diario_kg", "tipo_pago"]:
+                setattr(venta, key, value)
+        
+        venta.actualizar_estado()  # Método del modelo para recalcular estado_pago
         db.session.commit()
-        return venta_schema.dump(updated_venta), 200
+        
+        return venta_schema.dump(venta), 200
 
     @jwt_required()
+    @mismo_almacen_o_admin
     @handle_db_errors
     def delete(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
+        
+        # Revertir stock
+        for detalle in venta.detalles:
+            inventario = Inventario.query.filter_by(
+                presentacion_id=detalle.presentacion_id,
+                almacen_id=venta.almacen_id
+            ).first()
+            inventario.cantidad += detalle.cantidad
+        
         db.session.delete(venta)
         db.session.commit()
-        return {"message": "Venta eliminada"}, 204
+        
+        return "", 204
