@@ -28,14 +28,16 @@ class LoteResource(Resource):
             }
         }, 200
 
+
     @jwt_required()
     @handle_db_errors
     def post(self):
+
         data = lote_schema.load(request.get_json())
-        
+
         # Validar proveedor y producto
-        Proveedor.query.get_or_404(data["proveedor_id"])
-        Producto.query.get_or_404(data["producto_id"])
+        Proveedor.query.get_or_404(data.proveedor_id)
+        Producto.query.get_or_404(data.producto_id)
         
         db.session.add(data)
         db.session.commit()
@@ -59,4 +61,4 @@ class LoteResource(Resource):
         lote = Lote.query.get_or_404(lote_id)
         db.session.delete(lote)
         db.session.commit()
-        return "", 204
+        return "Lote eliminado exitosamente!", 200

@@ -15,7 +15,7 @@ from resources.user_resource import UserResource
 from resources.inventario_resource import InventarioResource
 from resources.lote_resource import LoteResource
 from resources.merma_resource import MermaResource
-from resources.presentacion_resource import PresentacionProductoResource
+from resources.presentacion_resource import PresentacionResource
 
 from extensions import db, jwt  # Importa la instancia de SQLAlchemy
 import os
@@ -93,14 +93,16 @@ api.add_resource(AuthResource, '/auth')
 api.add_resource(RegisterResource, '/registrar')
 api.add_resource(UserResource, '/usuarios', '/usuarios/<int:user_id>')
 api.add_resource(ProductoResource, '/productos', '/productos/<int:producto_id>')
-api.add_resource(PagoResource, '/pagos', '/pago/<int:pago_id>')
+api.add_resource(PagoResource, '/pagos', '/pagos/<int:pago_id>')
 api.add_resource(ProveedorResource, '/proveedores', '/proveedores/<int:proveedor_id>')
 api.add_resource(AlmacenResource, '/almacenes', '/almacenes/<int:almacen_id>')
 api.add_resource(ClienteResource, '/clientes', '/clientes/<int:cliente_id>')
 api.add_resource(GastoResource, '/gastos', '/gastos/<int:gasto_id>')
 api.add_resource(MovimientoResource, '/movimientos', '/movimientos/<int:movimiento_id>')
 api.add_resource(VentaResource, '/ventas', '/ventas/<int:venta_id>')
-api.add_resource(InventarioResource, '/inventario', '/inventario/<int:inventario_id>')
+api.add_resource(InventarioResource, '/inventarios', '/inventarios/<int:inventario_id>')
+api.add_resource(PresentacionResource, '/presentaciones', '/presentaciones/<int:presentacion_id>')
+api.add_resource(MermaResource, '/mermas', '/mermas/<int:merma_id>')
 api.add_resource(LoteResource, '/lotes', '/lotes/<int:lote_id>')
 
 if __name__ == '__main__':

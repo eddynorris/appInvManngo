@@ -10,11 +10,9 @@ from werkzeug.security import generate_password_hash
 
 class UserResource(Resource):
     @jwt_required()
-    @rol_requerido(['admin'])
+    @rol_requerido('admin')
     @handle_db_errors
-    def get(self, user_id=None):
-        claims = get_jwt()
-        
+    def get(self, user_id=None):      
         # Si se solicita un usuario específico
         if user_id:
             usuario = Users.query.get_or_404(user_id)
@@ -40,7 +38,7 @@ class UserResource(Resource):
         
         return {
             "data": users_schema.dump(usuarios.items),
-            "pagination": {
+            "pagination": {  # Estructura corregida
                 "total": usuarios.total,
                 "page": usuarios.page,
                 "per_page": usuarios.per_page,
@@ -49,7 +47,7 @@ class UserResource(Resource):
         }, 200
 
     @jwt_required()
-    @rol_requerido(['admin'])
+    @rol_requerido('admin')
     @handle_db_errors
     def post(self):
         data = request.get_json()
@@ -74,7 +72,7 @@ class UserResource(Resource):
         return user_schema.dump(nuevo_usuario), 201
 
     @jwt_required()
-    @rol_requerido(['admin'])
+    @rol_requerido('admin')
     @handle_db_errors
     def put(self, user_id):
         usuario = Users.query.get_or_404(user_id)
@@ -100,7 +98,7 @@ class UserResource(Resource):
         return user_schema.dump(updated_usuario), 200
 
     @jwt_required()
-    @rol_requerido(['admin'])
+    @rol_requerido('admin')
     @handle_db_errors
     def delete(self, user_id):
         usuario = Users.query.get_or_404(user_id)
@@ -113,4 +111,4 @@ class UserResource(Resource):
         db.session.delete(usuario)
         db.session.commit()
         
-        return {"message": "Usuario eliminado correctamente"}, 204
+        return {"message": "Usuario eliminado correctamente"}, 200

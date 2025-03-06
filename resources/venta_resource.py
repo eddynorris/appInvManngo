@@ -1,7 +1,7 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Venta, VentaDetalle, Inventario, Cliente, PresentacionProducto
+from models import Venta, VentaDetalle, Inventario, Cliente, PresentacionProducto, Almacen
 from schemas import venta_schema, ventas_schema, venta_detalle_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, mismo_almacen_o_admin
@@ -41,7 +41,6 @@ class VentaResource(Resource):
                 # Manejar error de formato inválido
                 return {"error": "Formato de fecha inválido. Usa ISO 8601 (ej: '2025-03-05T00:00:00')"}, 400
         
-       
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
         ventas = query.paginate(page=page, per_page=per_page)
@@ -64,13 +63,14 @@ class VentaResource(Resource):
         almacen_id = data["almacen_id"]
         
         # Validar cliente y almacén
-        Cliente.query.get_or_404(data["cliente_id"])
+        cliente = Cliente.query.get_or_404(data["cliente_id"])
         almacen = Almacen.query.get_or_404(almacen_id)
         
-        total = Decimal(0)
+        total = Decimal('0')
         detalles = []
-        
-        # Procesar cada detalle de venta
+        inventarios_a_actualizar = {}
+    
+        # Procesar y validar cada detalle de venta
         for detalle_data in data["detalles"]:
             presentacion = PresentacionProducto.query.get_or_404(detalle_data["presentacion_id"])
             
@@ -80,52 +80,56 @@ class VentaResource(Resource):
                 almacen_id=almacen_id
             ).first()
             
-            if not inventario or inventario.cantidad < detalle_data["cantidad"]:
+            cantidad = detalle_data["cantidad"]
+            
+            if not inventario or inventario.cantidad < cantidad:
                 return {
                     "error": f"Stock insuficiente para {presentacion.nombre}",
                     "presentacion_id": presentacion.id,
                     "stock_disponible": inventario.cantidad if inventario else 0
                 }, 400
             
-            # Calcular subtotal y actualizar total
-            subtotal = presentacion.precio_venta * detalle_data["cantidad"]
-            total += subtotal
+            # Calcular subtotal usando el modelo
+            detalle = VentaDetalle(
+                presentacion_id=presentacion.id,
+                cantidad=cantidad,
+                precio_unitario=presentacion.precio_venta
+            )
             
-            # Preparar detalle
-            detalles.append({
-                "presentacion_id": presentacion.id,
-                "cantidad": detalle_data["cantidad"],
-                "precio_unitario": presentacion.precio_venta,
-                "subtotal": subtotal
-            })
-        
+            total += detalle.total_linea
+            detalles.append(detalle)
+            inventarios_a_actualizar[presentacion.id] = (inventario, cantidad)
+    
         # Crear venta
         nueva_venta = Venta(
-            cliente_id=data["cliente_id"],
+            cliente_id=cliente.id,
             almacen_id=almacen_id,
             total=total,
             tipo_pago=data["tipo_pago"],
             consumo_diario_kg=data.get("consumo_diario_kg"),
-            detalles=[VentaDetalle(**d) for d in detalles]
+            detalles=detalles
         )
-        
-        # Actualizar stock y proyección de cliente
-        for detalle in nueva_venta.detalles:
-            inventario = Inventario.query.filter_by(
-                presentacion_id=detalle.presentacion_id,
-                almacen_id=almacen_id
-            ).first()
-            inventario.cantidad -= detalle.cantidad
-        
-        if nueva_venta.consumo_diario_kg:
-            cliente = Cliente.query.get(data["cliente_id"])
-            cliente.ultima_fecha_compra = datetime.utcnow()
-            cliente.frecuencia_compra_dias = total / Decimal(nueva_venta.consumo_diario_kg)
-        
-        db.session.add(nueva_venta)
-        db.session.commit()
-        
-        return venta_schema.dump(nueva_venta), 201
+    
+        try:
+            # Actualizar stock y proyección de cliente
+            for inventario, cantidad in inventarios_a_actualizar.values():
+                inventario.cantidad -= cantidad
+            
+            if nueva_venta.consumo_diario_kg:
+                if Decimal(nueva_venta.consumo_diario_kg) <= 0:
+                    raise ValueError("El consumo diario debe ser mayor a 0")
+                
+                cliente.ultima_fecha_compra = datetime.utcnow()
+                cliente.frecuencia_compra_dias = (total / Decimal(nueva_venta.consumo_diario_kg)).quantize(Decimal('1.'))
+            
+            db.session.add(nueva_venta)
+            db.session.commit()
+            
+            return venta_schema.dump(nueva_venta), 201
+    
+        except Exception as e:
+            db.session.rollback()
+            return {"error": str(e)}, 500
 
     @jwt_required()
     @mismo_almacen_o_admin

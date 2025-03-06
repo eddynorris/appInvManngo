@@ -13,32 +13,62 @@ class AlmacenSchema(SQLAlchemyAutoSchema):
         model = Almacen
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
         exclude = ("inventario", "ventas")  # Excluir relaciones recursivas
+
+class UserSchema(SQLAlchemyAutoSchema):
+    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
+
+    class Meta:
+        model = Users
+        load_instance = True
+        unknown = EXCLUDE
+        sqla_session = db.session 
+        exclude = ("movimientos",)
 
 class ProveedorSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = Proveedor
         load_instance = True
+        sqla_session = db.session 
         unknown = EXCLUDE
 
-# ------------------------- ESQUEMAS PARA NUEVOS MODELOS -------------------------
-class PresentacionProductoSchema(SQLAlchemyAutoSchema):
+
+class ProductoSchema(SQLAlchemyAutoSchema):
+    presentaciones = fields.List(fields.Nested("PresentacionSchema", exclude=("producto",)), dump_only=True)
+    precio_compra = fields.Decimal(as_string=True)
+
+    class Meta:
+        model = Producto
+        load_instance = True
+        unknown = EXCLUDE
+        sqla_session = db.session 
+
+
+class PresentacionSchema(SQLAlchemyAutoSchema):
     producto = fields.Nested("ProductoSchema", only=("id", "nombre"), dump_only=True)
+    precio_venta = fields.Decimal(as_string=True)
+    capacidad_kg = fields.Decimal(as_string=True)
     
     class Meta:
         model = PresentacionProducto
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
         include_fk = True  # Incluir producto_id
 
 class LoteSchema(SQLAlchemyAutoSchema):
     proveedor = fields.Nested(ProveedorSchema, only=("id", "nombre"), dump_only=True)
-    producto = fields.Nested("ProductoSchema", only=("id", "nombre"), dump_only=True)
+    producto = fields.Nested(ProductoSchema, only=("id", "nombre"), dump_only=True)
+    peso_humedo_kg = fields.Decimal(as_string=True)
+    peso_seco_kg = fields.Decimal(as_string=True)
 
     class Meta:
         model = Lote
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session
+        include_fk = True
 
 class MermaSchema(SQLAlchemyAutoSchema):
     lote = fields.Nested(LoteSchema, only=("id", "peso_seco_kg"), dump_only=True)
@@ -47,19 +77,10 @@ class MermaSchema(SQLAlchemyAutoSchema):
         model = Merma
         load_instance = True
         unknown = EXCLUDE
-
-# ------------------------- ESQUEMAS ACTUALIZADOS -------------------------
-class ProductoSchema(SQLAlchemyAutoSchema):
-    presentaciones = fields.List(fields.Nested(PresentacionProductoSchema, exclude=("producto",)), dump_only=True)
-    precio_compra = fields.Decimal(as_string=True)
-
-    class Meta:
-        model = Producto
-        load_instance = True
-        unknown = EXCLUDE
+        sqla_session = db.session 
 
 class InventarioSchema(SQLAlchemyAutoSchema):
-    presentacion = fields.Nested(PresentacionProductoSchema, only=("id", "nombre", "capacidad_kg"))
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "capacidad_kg"))
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
     lote = fields.Nested(LoteSchema, only=("id", "proveedor"))
 
@@ -67,6 +88,8 @@ class InventarioSchema(SQLAlchemyAutoSchema):
         model = Inventario
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session
+        include_fk = True
 
 class ClienteSchema(SQLAlchemyAutoSchema):
     saldo_pendiente = fields.Decimal(as_string=True, dump_only=True)
@@ -76,26 +99,32 @@ class ClienteSchema(SQLAlchemyAutoSchema):
         model = Cliente
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
 
 class MovimientoSchema(SQLAlchemyAutoSchema):
-    presentacion = fields.Nested(PresentacionProductoSchema, only=("id", "nombre"))
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre"))
     lote = fields.Nested(LoteSchema, only=("id", "peso_seco_kg"))
-    usuario = fields.Nested("UserSchema", only=("id", "username"))
+    usuario = fields.Nested(UserSchema, only=("id", "username"))
+    cantidad = fields.Decimal(as_string=True)
 
     class Meta:
         model = Movimiento
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
 
 class VentaDetalleSchema(SQLAlchemyAutoSchema):
-    presentacion = fields.Nested(PresentacionProductoSchema, only=("id", "nombre", "precio_venta"))
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta"))
     precio_unitario = fields.Decimal(as_string=True)
+    total_linea = fields.Decimal(as_string=True, dump_only=True)
 
     class Meta:
         model = VentaDetalle
         load_instance = True
         unknown = EXCLUDE
-        exclude = ("venta_id",)
+        sqla_session = db.session 
+        include_fk = True
+        ##exclude = ("venta_id",)
 
 class VentaSchema(SQLAlchemyAutoSchema):
     cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))
@@ -108,6 +137,7 @@ class VentaSchema(SQLAlchemyAutoSchema):
         model = Venta
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
 
 class PagoSchema(SQLAlchemyAutoSchema):
     venta = fields.Nested(VentaSchema, only=("id", "total"))
@@ -117,14 +147,7 @@ class PagoSchema(SQLAlchemyAutoSchema):
         model = Pago
         load_instance = True
         unknown = EXCLUDE
-
-class UserSchema(SQLAlchemyAutoSchema):
-    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
-
-    class Meta:
-        model = Users
-        load_instance = True
-        unknown = EXCLUDE
+        sqla_session = db.session 
 
 class GastoSchema(SQLAlchemyAutoSchema):
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
@@ -134,13 +157,14 @@ class GastoSchema(SQLAlchemyAutoSchema):
         model = Gasto
         load_instance = True
         unknown = EXCLUDE
+        sqla_session = db.session 
 
 # Inicializar esquemas
 user_schema = UserSchema()
 users_schema = UserSchema(many=True)
 
-presentacion_schema = PresentacionProductoSchema()
-presentaciones_schema = PresentacionProductoSchema(many=True)
+presentacion_schema = PresentacionSchema()
+presentaciones_schema = PresentacionSchema(many=True)
 
 lote_schema = LoteSchema()
 lotes_schema = LoteSchema(many=True)

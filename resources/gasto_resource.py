@@ -29,11 +29,16 @@ class GastoResource(Resource):
         # Paginación
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        resultado = query.paginate(page=page, per_page=per_page, error_out=False)
+        gastos = query.paginate(page=page, per_page=per_page, error_out=False)
         
         return {
-            "data": gastos_schema.dump(resultado.items),
-            "pagination": resultado.pagination
+            "data": gastos_schema.dump(gastos.items),
+            "pagination": {
+                "total": gastos.total,
+                "page": gastos.page,
+                "per_page": gastos.per_page,
+                "pages": gastos.pages
+            }
         }, 200
 
     @jwt_required()

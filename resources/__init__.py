@@ -1,11 +1,18 @@
-from .auth_resource import AuthResource
-from .producto_resource import ProductoResource
 from .almacen_resource import AlmacenResource
+from .auth_resource import AuthResource
 from .cliente_resource import ClienteResource
 from .gasto_resource import GastoResource
+from .inventario_resource import InventarioResource
+from .lote_resource import LoteResource
+from .merma_resource import MermaResource
 from .movimiento_resource import MovimientoResource
-from .venta_resource import VentaResource
+from .pago_resource import PagoResource
+from .presentacion_resource import PresentacionResource
+from .producto_resource import ProductoResource
+from .proveedor_resource import ProveedorResource
 from .user_resource import UserResource
+from .venta_resource import VentaResource
+from .ventadetalle_resource import VentaDetalleResource
 
 __all__ = [
     'AuthResource',
@@ -16,5 +23,11 @@ __all__ = [
     'GastoResource',
     'MovimientoResource',
     'VentaResource',
+    'InventarioResource',
+    'LoteResource',
+    'MermaResource',
+    'PresentacionResource',
+    'ProveedorResource',
+    'VentaDetalleResource',
     'PagoResource'
 ]

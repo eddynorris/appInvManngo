@@ -74,4 +74,4 @@ class ClienteResource(Resource):
             
         db.session.delete(cliente)
         db.session.commit()
-        return "", 204
+        return "Producto eliminado exitosamente", 200

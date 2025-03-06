@@ -54,35 +54,5 @@ class ProductoResource(Resource):
         producto = Producto.query.get_or_404(producto_id)
         db.session.delete(producto)
         db.session.commit()
-        return "", 204
+        return "Producto eliminado exitosamente", 204
 
-# --- Nuevo recurso para PresentacionesProducto ---
-class PresentacionProductoResource(Resource):
-    @jwt_required()
-    @handle_db_errors
-    def post(self):
-        data = presentacion_schema.load(request.get_json())
-        db.session.add(data)
-        db.session.commit()
-        return presentacion_schema.dump(data), 201
-
-    @jwt_required()
-    @handle_db_errors
-    def get(self, presentacion_id=None):
-        if presentacion_id:
-            presentacion = PresentacionProducto.query.get_or_404(presentacion_id)
-            return presentacion_schema.dump(presentacion), 200
-        
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        presentaciones = PresentacionProducto.query.paginate(page=page, per_page=per_page)
-        
-        return {
-            "data": presentaciones_schema.dump(presentaciones.items),
-            "pagination": {
-                "total": presentaciones.total,
-                "page": presentaciones.page,
-                "per_page": presentaciones.per_page,
-                "pages": presentaciones.pages
-            }
-        }, 200

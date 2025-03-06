@@ -27,11 +27,11 @@ def rol_requerido(*roles_permitidos):
             verify_jwt_in_request()
             claims = get_jwt()
             if claims.get('rol') not in roles_permitidos:
-                return jsonify(
-                    error="Acceso denegado",
-                    required_roles=list(roles_permitidos),
-                    current_role=claims.get('rol')
-                ), 403
+                return {
+                    "error": "Acceso denegado",
+                    "required_roles": list(roles_permitidos),
+                    "current_role": claims.get('rol')
+                }, 403
             return fn(*args, **kwargs)
         return wrapper
     return decorator

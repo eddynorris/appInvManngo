@@ -29,11 +29,16 @@ class MovimientoResource(Resource):
         # Paginación
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        resultado = query.paginate(page=page, per_page=per_page, error_out=False)
+        movimientos = query.paginate(page=page, per_page=per_page, error_out=False)
         
         return {
-            "data": movimientos_schema.dump(resultado.items),
-            "pagination": resultado.pagination
+            "data": movimientos_schema.dump(movimientos.items),
+            "pagination": {
+                "total": movimientos.total,
+                "page": movimientos.page,
+                "per_page": movimientos.per_page,
+                "pages": movimientos.pages
+            }
         }, 200
 
     @jwt_required()

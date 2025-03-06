@@ -1,7 +1,7 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Inventario, PresentacionProducto, Almacen, Lote
+from models import Inventario, PresentacionProducto, Almacen, Lote, Movimiento
 from schemas import inventario_schema, inventarios_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
@@ -48,23 +48,34 @@ class InventarioResource(Resource):
         data = inventario_schema.load(request.get_json())
         
         # Validar relaciones
-        PresentacionProducto.query.get_or_404(data["presentacion_id"])
-        Almacen.query.get_or_404(data["almacen_id"])
-        if data.get("lote_id"):
-            Lote.query.get_or_404(data["lote_id"])
+        PresentacionProducto.query.get_or_404(data.presentacion_id)
+        Almacen.query.get_or_404(data.almacen_id)
+        if data.lote_id:
+            Lote.query.get_or_404(data.lote_id)
         
         # Verificar unicidad
         if Inventario.query.filter_by(
-            producto_id=data["producto_id"],
-            presentacion_id=data["presentacion_id"],
-            almacen_id=data["almacen_id"]
+            producto_id=data.producto_id,
+            presentacion_id=data.presentacion_id,
+            almacen_id=data.almacen_id
         ).first():
             return {"error": "Registro de inventario ya existe"}, 400
         
-        nuevo_inventario = Inventario(**data)
-        db.session.add(nuevo_inventario)
+        if data.cantidad > 0:
+            claims = get_jwt()
+            movimiento = Movimiento(
+                tipo='entrada',
+                presentacion_id=data.presentacion_id,
+                lote_id=data.lote_id,
+                cantidad=data.cantidad,
+                usuario_id=claims.get('sub'),
+                motivo="Inicialización de inventario"
+            )
+            db.session.add(movimiento)        
+
+        db.session.add(data)
         db.session.commit()
-        return inventario_schema.dump(nuevo_inventario), 201
+        return inventario_schema.dump(data), 201
 
     @jwt_required()
     @handle_db_errors

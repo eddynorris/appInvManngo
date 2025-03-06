@@ -2,6 +2,7 @@
 
 -- DROP DATABASE IF EXISTS "invManngo";
 
+
 CREATE DATABASE "manngo_db"
     WITH
     OWNER = yor
@@ -146,3 +147,30 @@ CREATE TABLE gastos (
     almacen_id INTEGER REFERENCES almacenes(id),
     usuario_id INTEGER REFERENCES users(id)
 );
+-- Insertar datos de productos
+INSERT INTO productos (nombre, descripcion, precio_compra, precio_venta, stock, stock_minimo) VALUES
+('Saco de 30kg', 'Saco de carbon vegetal en presentacion de 30kg', 42, 87, 0),
+('Saco 20 kg', 'Saco de carbon vegetal en presentacion de 20kg',29, 58, 0),
+('Bolsa de 10kg', 'Bolsa de papel con carbon vegetal en presentacion de 10kg',15, 30, 100),
+('Saco de 5kg', 'Saco pequeño de carbon vegetal en presentacion de 5kg',7, 15, 0),
+('Bolsa de carbon BioBrasa 5kg', 'Bolsa de carbon para tiendas verde Biobrasa de 5kg',12, 22, 0),
+('Bolsa de briquetas Fogo de 4kg', 'Briquetas de carbon vegetal rojo fogo de chao de 4kg', 8, 16.5, 0),
+('Bolsa de carbon Fogo 3k', 'Bolsa de carbon vegetal rojo Fogo de chao de 3kg', 7, 14, 0);
+
+-- Insertar almacenes
+INSERT INTO almacenes (nombre, direccion, ciudad) VALUES
+('Planta', 'Km 384 Colcabamba', 'Calicocha'),
+('Almacen Abancay', 'Av. Tamburco', 'Abancay'),
+('Almacen Andahuaylas', 'Av. Peru', 'Anahuaylas');
+
+-- Insertar clientes (con datos de última compra y días para reorden)
+INSERT INTO clientes (nombre, telefono, direccion, saldo_pendiente) VALUES
+('Pollo Loko', '+51987654321', 'Av. Principal 123', 0,0),
+('Polleria Mauris', '+51987654322', 'Calle Los Olivos 456', 0,0),
+('Polleria Ricas Brasas', '+51987654323', 'Jr. Libertad 789', 0,0),
+('Mateus Restaurant', '+51987654324', 'Av. Sol 101', 0,0),
+('Carboleña del Olivo', '+51987654325', 'Calle Paz 202', 0,0),
+('Polleria La Fogata', '+51987654326', 'Av. Luna 303', 0,0),
+('Maria Mayorista', '+51987654327', 'Jr. Estrella 404', 0,0),
+('Dcarmen', '+51987654328', 'Av. Marte 505', 0,0),
+('Polleria Gael', '+51987654329', 'Calle Tierra 606', 0,0);

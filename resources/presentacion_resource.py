@@ -6,7 +6,7 @@ from schemas import presentacion_schema, presentaciones_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, rol_requerido
 
-class PresentacionProductoResource(Resource):
+class PresentacionResource(Resource):
     @jwt_required()
     @handle_db_errors
     def get(self, presentacion_id=None):
@@ -49,29 +49,44 @@ class PresentacionProductoResource(Resource):
     def post(self):
         """Crea nueva presentación (Requiere rol admin/gerente)"""
         data = presentacion_schema.load(request.get_json())
-        nueva_presentacion = PresentacionProducto(**data)
-        db.session.add(nueva_presentacion)
+
+                # Verifica si ya existe la combinación producto_id + nombre
+        existe = PresentacionProducto.query.filter_by(
+            producto_id=data.producto_id,
+            nombre=data.nombre
+        ).first()
+
+        if existe:
+            return {
+                "error": "Conflicto de unicidad",
+                "mensaje": f"Ya existe una presentación con el nombre '{data['nombre']}' para este producto."
+            }, 409  # Conflict
+            
+        db.session.add(data)
         db.session.commit()
-        return presentacion_schema.dump(nueva_presentacion), 201
+        return presentacion_schema.dump(data), 201
 
     @jwt_required()
     @rol_requerido('admin', 'gerente')
     @handle_db_errors
     def put(self, presentacion_id):
-        """Actualiza presentación existente (Requiere rol admin/gerente)"""
         presentacion = PresentacionProducto.query.get_or_404(presentacion_id)
-        data = presentacion_schema.load(request.get_json(), partial=True)
+        updated_presentacion = presentacion_schema.load(
+            request.get_json(),
+            instance=presentacion,
+            partial=True
+        )
 
-        # Validar campos inmutables
-        if 'producto_id' in data and data['producto_id'] != presentacion.producto_id:
-            return {"error": "No se puede modificar el producto asociado"}, 400
-
-        for key, value in data.items():
-            setattr(presentacion, key, value)
+        # Validación única adicional
+        if PresentacionProducto.query.filter(
+            PresentacionProducto.producto_id == presentacion.producto_id,
+            PresentacionProducto.nombre == updated_presentacion.nombre,
+            PresentacionProducto.id != presentacion_id
+        ).first():
+            return {"error": "Nombre ya existe para este producto"}, 409
 
         db.session.commit()
-        return presentacion_schema.dump(presentacion), 200
-
+        return presentacion_schema.dump(updated_presentacion), 200
     @jwt_required()
     @rol_requerido('admin')
     @handle_db_errors
@@ -87,4 +102,4 @@ class PresentacionProductoResource(Resource):
 
         db.session.delete(presentacion)
         db.session.commit()
-        return "", 204
+        return "Eliminado exitosamente", 200

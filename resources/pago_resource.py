@@ -30,11 +30,16 @@ class PagoResource(Resource):
         # Paginación
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), MAX_ITEMS_PER_PAGE)
-        resultado = query.paginate(page=page, per_page=per_page, error_out=False)
+        pagos = query.paginate(page=page, per_page=per_page, error_out=False)
         
         return {
-            "data": pagos_schema.dump(resultado.items),
-            "pagination": resultado.pagination
+            "data": pagos_schema.dump(pagos.items),
+            "pagination": {
+                "total": pagos.total,
+                "page": pagos.page,
+                "per_page": pagos.per_page,
+                "pages": pagos.pages
+            }
         }, 200
 
     @jwt_required()
