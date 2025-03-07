@@ -1,7 +1,8 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, UniqueConstraint, Index
 from datetime import datetime, timezone
-from extensions import db 
+from extensions import db
+from decimal import Decimal
 
 class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -52,6 +53,7 @@ class Lote(db.Model):
     proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedores.id', ondelete='SET NULL'), nullable=True)
     peso_humedo_kg = db.Column(db.Numeric(10, 2), nullable=False)  # Peso inicial (mojado)
     peso_seco_kg = db.Column(db.Numeric(10, 2))  # Peso real después de secado
+    cantidad_disponible_kg = db.Column(db.Numeric(10, 2))
     fecha_ingreso = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relaciones
@@ -75,7 +77,6 @@ class Almacen(db.Model):
 class Inventario(db.Model):
     __tablename__ = 'inventario'
     id = db.Column(db.Integer, primary_key=True)  # PK autoincremental
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
     presentacion_id = db.Column(db.Integer, db.ForeignKey('presentaciones_producto.id', ondelete='CASCADE'), nullable=False)
     almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), nullable=False)
     lote_id = db.Column(db.Integer, db.ForeignKey('lotes.id', ondelete='SET NULL'))
@@ -85,17 +86,15 @@ class Inventario(db.Model):
     ultima_actualizacion = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relaciones
-    producto = db.relationship('Producto')
     presentacion = db.relationship('PresentacionProducto')
     lote = db.relationship('Lote')
 
     __table_args__ = (
         # Garantizar que no haya duplicados para la combinación de estos tres campos
-        UniqueConstraint('producto_id', 'presentacion_id', 'almacen_id', name='uq_inventario_compuesto'),
+        UniqueConstraint('presentacion_id', 'almacen_id', name='uq_inventario_compuesto'),
         
         # Índices para mejorar el rendimiento de consultas comunes
         Index('idx_inventario_almacen', 'almacen_id', 'presentacion_id'),
-        Index('idx_inventario_producto', 'producto_id')
     )
 
 class Venta(db.Model):
@@ -112,6 +111,16 @@ class Venta(db.Model):
     # Relaciones
     detalles = db.relationship('VentaDetalle', backref='venta', lazy=True, cascade="all, delete-orphan")
     pagos = db.relationship("Pago", backref="venta", lazy=True, cascade="all, delete-orphan")
+
+
+    def actualizar_estado(self):
+        saldo = self.saldo_pendiente
+        if saldo <= Decimal('0.00'):
+            self.estado_pago = 'pagado'
+        elif self.pagos:
+            self.estado_pago = 'parcial'
+        else:
+            self.estado_pago = 'pendiente'
 
     __table_args__ = (
         CheckConstraint("tipo_pago IN ('contado', 'credito')"),

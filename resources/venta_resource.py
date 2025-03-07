@@ -1,7 +1,7 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Venta, VentaDetalle, Inventario, Cliente, PresentacionProducto, Almacen
+from models import Venta, VentaDetalle, Inventario, Cliente, PresentacionProducto, Almacen, Movimiento
 from schemas import venta_schema, ventas_schema, venta_detalle_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, mismo_almacen_o_admin
@@ -55,78 +55,83 @@ class VentaResource(Resource):
             }
         }, 200
 
+
     @jwt_required()
     @mismo_almacen_o_admin
     @handle_db_errors
     def post(self):
-        data = venta_schema.load(request.get_json())
-        almacen_id = data["almacen_id"]
-        
-        # Validar cliente y almacén
-        cliente = Cliente.query.get_or_404(data["cliente_id"])
-        almacen = Almacen.query.get_or_404(almacen_id)
-        
+        json_data = request.get_json()
+        data = venta_schema.load(json_data)
+
+        cliente = Cliente.query.get_or_404(data.cliente_id)
+        almacen = Almacen.query.get_or_404(data.almacen_id)
+
         total = Decimal('0')
-        detalles = []
         inventarios_a_actualizar = {}
-    
-        # Procesar y validar cada detalle de venta
-        for detalle_data in data["detalles"]:
-            presentacion = PresentacionProducto.query.get_or_404(detalle_data["presentacion_id"])
-            
-            # Verificar stock en inventario
+        movimientos = []  # Lista para almacenar los movimientos
+        claims = get_jwt()
+
+        for detalle in data.detalles:
+            presentacion = PresentacionProducto.query.get_or_404(detalle.presentacion_id)
+
             inventario = Inventario.query.filter_by(
                 presentacion_id=presentacion.id,
-                almacen_id=almacen_id
+                almacen_id=data.almacen_id
             ).first()
-            
-            cantidad = detalle_data["cantidad"]
-            
-            if not inventario or inventario.cantidad < cantidad:
-                return {
-                    "error": f"Stock insuficiente para {presentacion.nombre}",
-                    "presentacion_id": presentacion.id,
-                    "stock_disponible": inventario.cantidad if inventario else 0
-                }, 400
-            
-            # Calcular subtotal usando el modelo
-            detalle = VentaDetalle(
-                presentacion_id=presentacion.id,
-                cantidad=cantidad,
-                precio_unitario=presentacion.precio_venta
-            )
-            
-            total += detalle.total_linea
-            detalles.append(detalle)
-            inventarios_a_actualizar[presentacion.id] = (inventario, cantidad)
-    
-        # Crear venta
+
+            if not inventario or inventario.cantidad < detalle.cantidad:
+                return {"error": f"Stock insuficiente para {presentacion.nombre}"}, 400
+
+            # Registrar datos para el movimiento
+            movimientos.append({
+                "presentacion_id": presentacion.id,
+                "lote_id": inventario.lote_id,  # Obtenemos el lote del inventario
+                "cantidad": detalle.cantidad
+            })
+
+            total += detalle.cantidad * detalle.precio_unitario
+            inventarios_a_actualizar[presentacion.id] = (inventario, detalle.cantidad)
+
         nueva_venta = Venta(
-            cliente_id=cliente.id,
-            almacen_id=almacen_id,
+            cliente_id=data.cliente_id,
+            almacen_id=data.almacen_id,
             total=total,
-            tipo_pago=data["tipo_pago"],
-            consumo_diario_kg=data.get("consumo_diario_kg"),
-            detalles=detalles
+            tipo_pago=data.tipo_pago,
+            consumo_diario_kg=data.consumo_diario_kg,
+            detalles=data.detalles
         )
-    
+
         try:
-            # Actualizar stock y proyección de cliente
+            db.session.add(nueva_venta)
+            db.session.flush()  # Generamos el ID de la venta
+
+            # Crear movimientos después de obtener el ID de la venta
+            for movimiento_data in movimientos:
+                movimiento = Movimiento(
+                    tipo='salida',
+                    presentacion_id=movimiento_data["presentacion_id"],
+                    lote_id=movimiento_data["lote_id"],
+                    cantidad=movimiento_data["cantidad"],
+                    usuario_id=claims['sub'],
+                    motivo=f"Venta ID: {nueva_venta.id} - Cliente: {cliente.nombre}"
+                )
+                db.session.add(movimiento)
+
+            # Actualizar inventarios
             for inventario, cantidad in inventarios_a_actualizar.values():
                 inventario.cantidad -= cantidad
-            
+
+            # Actualizar proyección del cliente
             if nueva_venta.consumo_diario_kg:
                 if Decimal(nueva_venta.consumo_diario_kg) <= 0:
                     raise ValueError("El consumo diario debe ser mayor a 0")
-                
+
                 cliente.ultima_fecha_compra = datetime.utcnow()
-                cliente.frecuencia_compra_dias = (total / Decimal(nueva_venta.consumo_diario_kg)).quantize(Decimal('1.'))
-            
-            db.session.add(nueva_venta)
+                cliente.frecuencia_compra_dias = (total / Decimal(nueva_venta.consumo_diario_kg)).quantize(Decimal('1.00'))
+
             db.session.commit()
-            
             return venta_schema.dump(nueva_venta), 201
-    
+
         except Exception as e:
             db.session.rollback()
             return {"error": str(e)}, 500
@@ -136,21 +141,24 @@ class VentaResource(Resource):
     @handle_db_errors
     def put(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
-        data = venta_schema.load(request.get_json(), partial=True)
+        raw_data = request.get_json()
         
-        # Campos inmutables
-        if "almacen_id" in data and data["almacen_id"] != venta.almacen_id:
-            return {"error": "No se puede modificar el almacén de una venta"}, 400
-        
-        # Actualizar campos permitidos (ej: estado_pago, consumo_diario_kg)
-        for key, value in data.items():
-            if key in ["estado_pago", "consumo_diario_kg", "tipo_pago"]:
-                setattr(venta, key, value)
-        
-        venta.actualizar_estado()  # Método del modelo para recalcular estado_pago
+
+        # Validar campos inmutables
+        immutable_fields = ["detalles", "almacen_id"]
+        for field in immutable_fields:
+            if field in raw_data and str(raw_data[field]) != str(getattr(venta, field)):
+                return {"error": f"Campo inmutable '{field}' no puede modificarse"}, 400
+                # Cargar datos validados sobre la instancia existente
+
+        updated_venta = venta_schema.load(
+            raw_data,
+            instance=venta,
+            partial=True
+        )
+
         db.session.commit()
-        
-        return venta_schema.dump(venta), 200
+        return venta_schema.dump(updated_venta), 200
 
     @jwt_required()
     @mismo_almacen_o_admin
@@ -158,15 +166,29 @@ class VentaResource(Resource):
     def delete(self, venta_id):
         venta = Venta.query.get_or_404(venta_id)
         
-        # Revertir stock
-        for detalle in venta.detalles:
-            inventario = Inventario.query.filter_by(
-                presentacion_id=detalle.presentacion_id,
-                almacen_id=venta.almacen_id
-            ).first()
-            inventario.cantidad += detalle.cantidad
-        
-        db.session.delete(venta)
-        db.session.commit()
-        
-        return "", 204
+        try:
+            # Revertir movimientos e inventario
+            movimientos = Movimiento.query.filter(
+                Movimiento.motivo.like(f"Venta ID: {venta_id}%")
+            ).all()
+            
+            for movimiento in movimientos:
+                inventario = Inventario.query.filter_by(
+                    presentacion_id=movimiento.presentacion_id,
+                    almacen_id=venta.almacen_id
+                ).first()
+                
+                if inventario:
+                    inventario.cantidad += movimiento.cantidad
+                
+                db.session.delete(movimiento)
+            
+            db.session.delete(venta)
+            db.session.commit()
+            
+            return {"message": "Venta eliminada con éxito"}, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            return {"error": str(e)}, 500
+    

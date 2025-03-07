@@ -62,6 +62,7 @@ class LoteSchema(SQLAlchemyAutoSchema):
     producto = fields.Nested(ProductoSchema, only=("id", "nombre"), dump_only=True)
     peso_humedo_kg = fields.Decimal(as_string=True)
     peso_seco_kg = fields.Decimal(as_string=True)
+    cantidad_disponible_kg = fields.Decimal(as_string=True)
 
     class Meta:
         model = Lote
@@ -82,7 +83,7 @@ class MermaSchema(SQLAlchemyAutoSchema):
 class InventarioSchema(SQLAlchemyAutoSchema):
     presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "capacidad_kg"))
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
-    lote = fields.Nested(LoteSchema, only=("id", "proveedor"))
+    lote = fields.Nested(LoteSchema, only=("id", "proveedor", "cantidad_disponible_kg"))
 
     class Meta:
         model = Inventario
@@ -121,10 +122,10 @@ class VentaDetalleSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = VentaDetalle
         load_instance = True
-        unknown = EXCLUDE
+        unknown = EXCLUDE   
         sqla_session = db.session 
         include_fk = True
-        ##exclude = ("venta_id",)
+        exclude = ("venta_id",)
 
 class VentaSchema(SQLAlchemyAutoSchema):
     cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))
@@ -132,12 +133,15 @@ class VentaSchema(SQLAlchemyAutoSchema):
     detalles = fields.List(fields.Nested(VentaDetalleSchema))
     consumo_diario_kg = fields.Decimal(as_string=True)
     saldo_pendiente = fields.Decimal(as_string=True, dump_only=True)
+    total = fields.Decimal(as_string=True)
 
     class Meta:
         model = Venta
         load_instance = True
+        sqla_session = db.session
+        include_relationships = True
+        include_fk = True 
         unknown = EXCLUDE
-        sqla_session = db.session 
 
 class PagoSchema(SQLAlchemyAutoSchema):
     venta = fields.Nested(VentaSchema, only=("id", "total"))

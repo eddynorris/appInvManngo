@@ -46,7 +46,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 
 # Additional JWT configuration for better security
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 6000  # Token expires in 1 hour
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 60000  # Token expires in 1 hour
 app.config['JWT_ALGORITHM'] = 'HS256'  # Specify the algorithm
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'mamahuevo')
 

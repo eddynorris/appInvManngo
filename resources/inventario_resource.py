@@ -2,7 +2,7 @@ from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
 from models import Inventario, PresentacionProducto, Almacen, Lote, Movimiento
-from schemas import inventario_schema, inventarios_schema
+from schemas import inventario_schema, inventarios_schema, lote_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 
@@ -14,9 +14,8 @@ class InventarioResource(Resource):
             inventario = Inventario.query.get_or_404(inventario_id)
             return inventario_schema.dump(inventario), 200
         
-        # Filtros: producto_id, presentacion_id, almacen_id, lote_id
+        # Filtros: presentacion_id, almacen_id, lote_id
         filters = {
-            "producto_id": request.args.get('producto_id'),
             "presentacion_id": request.args.get('presentacion_id'),
             "almacen_id": request.args.get('almacen_id'),
             "lote_id": request.args.get('lote_id')
@@ -48,14 +47,11 @@ class InventarioResource(Resource):
         data = inventario_schema.load(request.get_json())
         
         # Validar relaciones
-        PresentacionProducto.query.get_or_404(data.presentacion_id)
+        presentacion = PresentacionProducto.query.get_or_404(data.presentacion_id)
         Almacen.query.get_or_404(data.almacen_id)
-        if data.lote_id:
-            Lote.query.get_or_404(data.lote_id)
         
         # Verificar unicidad
         if Inventario.query.filter_by(
-            producto_id=data.producto_id,
             presentacion_id=data.presentacion_id,
             almacen_id=data.almacen_id
         ).first():
@@ -71,7 +67,25 @@ class InventarioResource(Resource):
                 usuario_id=claims.get('sub'),
                 motivo="Inicialización de inventario"
             )
-            db.session.add(movimiento)        
+            db.session.add(movimiento)
+            
+            if data.lote_id:
+                lote = Lote.query.get_or_404(data.lote_id)
+
+                # Calcular kg a restar del lote
+                kg_a_restar = data.cantidad * presentacion.capacidad_kg
+
+                # Verificar que hay suficiente stock en el lote
+                if lote.cantidad_disponible_kg < kg_a_restar:
+                    return {"error": "Stock insuficiente en el lote"}, 400
+
+                lote.cantidad_disponible_kg -= kg_a_restar
+                #Actualizar Lote
+                lote_schema.load(
+                request.get_json(),
+                instance=lote,
+                partial=True
+                )
 
         db.session.add(data)
         db.session.commit()
@@ -80,31 +94,36 @@ class InventarioResource(Resource):
     @jwt_required()
     @handle_db_errors
     def put(self, inventario_id):
+        
         inventario = Inventario.query.get_or_404(inventario_id)
-        data = inventario_schema.load(request.get_json(), partial=True)
-        
-        # Validar campos inmutables
-        immutable_fields = ["producto_id", "presentacion_id", "almacen_id"]
+        # Obtener datos en crudo para validación
+        raw_data = request.get_json()
+
+        # Validar campos inmutables antes de cargar
+        immutable_fields = ["presentacion_id", "almacen_id"]
         for field in immutable_fields:
-            if field in data and data[field] != getattr(inventario, field):
-                return {"error": f"No se puede modificar el campo '{field}'"}, 400
-        
-        # Actualizar campos permitidos
-        for key, value in data.items():
-            setattr(inventario, key, value)
-        
+            if field in raw_data:
+                if str(raw_data[field]) != str(getattr(inventario, field)):
+                    return {"error": f"Campo inmutable '{field}' no puede modificarse"}, 400
+
+        # Cargar datos validados sobre la instancia existente
+        updated_inventario = inventario_schema.load(
+            raw_data,
+            instance=inventario,
+            partial=True
+        )
+
         db.session.commit()
-        return inventario_schema.dump(inventario), 200
+        return inventario_schema.dump(updated_inventario), 200
 
     @jwt_required()
     @handle_db_errors
     def delete(self, inventario_id):
         inventario = Inventario.query.get_or_404(inventario_id)
-        
         # Verificar movimientos asociados
         if inventario.movimientos:
             return {"error": "No se puede eliminar un inventario con movimientos registrados"}, 400
         
         db.session.delete(inventario)
         db.session.commit()
-        return "", 204
+        return "Presentacion en Inventario Eliminado", 200
