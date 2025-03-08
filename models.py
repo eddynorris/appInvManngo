@@ -112,12 +112,15 @@ class Venta(db.Model):
     detalles = db.relationship('VentaDetalle', backref='venta', lazy=True, cascade="all, delete-orphan")
     pagos = db.relationship("Pago", backref="venta", lazy=True, cascade="all, delete-orphan")
 
+    @property
+    def saldo_pendiente(self):
+        total_pagado = sum(pago.monto for pago in self.pagos)
+        return self.total - total_pagado
 
     def actualizar_estado(self):
-        saldo = self.saldo_pendiente
-        if saldo <= Decimal('0.00'):
+        if self.saldo_pendiente <= 0:
             self.estado_pago = 'pagado'
-        elif self.pagos:
+        elif len(self.pagos) > 0:
             self.estado_pago = 'parcial'
         else:
             self.estado_pago = 'pendiente'
@@ -149,6 +152,9 @@ class Merma(db.Model):
     cantidad_kg = db.Column(db.Numeric(10, 2), nullable=False)
     convertido_a_briquetas = db.Column(db.Boolean, default=False)
     fecha_registro = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Auditoría de quién registró
+
+    lote = db.relationship('Lote', backref='mermas')
 
 class Proveedor(db.Model):
     __tablename__ = 'proveedores'
@@ -172,7 +178,11 @@ class Cliente(db.Model):
 
     @property
     def saldo_pendiente(self):
-        return sum(v.saldo_pendiente for v in self.ventas if v.estado_pago != 'pagado')
+        return sum(
+            venta.total - sum(pago.monto for pago in venta.pagos)
+            for venta in self.ventas
+            if venta.estado_pago != 'pagado'
+        )
 
     def __repr__(self):
         return f'<Cliente {self.nombre}>'

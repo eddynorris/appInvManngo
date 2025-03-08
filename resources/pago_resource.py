@@ -47,16 +47,24 @@ class PagoResource(Resource):
     def post(self):
         """Registra nuevo pago y actualiza estado de la venta"""
         data = pago_schema.load(request.get_json())
-        venta = Venta.query.get_or_404(data['venta_id'])
         
-        # Validar que el pago no exceda el saldo pendiente
-        if Decimal(data['monto']) > venta.saldo_pendiente:
+        venta = Venta.query.get_or_404(data.venta_id)
+
+        saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
+
+        if Decimal(data.monto) > saldo_pendiente_venta:
             return {"error": "Monto excede el saldo pendiente"}, 400
         
-        nuevo_pago = Pago(**data)
+        nuevo_pago = Pago(
+        venta_id=venta.id,
+        monto=data.monto,
+        metodo_pago=data.metodo_pago,
+        referencia=data.referencia,
+        usuario_id=get_jwt().get('sub')
+        )
+
         db.session.add(nuevo_pago)
         
-        # Actualizar estado de la venta
         venta.actualizar_estado()
         db.session.commit()
         
@@ -65,23 +73,26 @@ class PagoResource(Resource):
     @jwt_required()
     @handle_db_errors
     def put(self, pago_id):
-        """Actualiza pago existente y recalcula estado de venta"""
         pago = Pago.query.get_or_404(pago_id)
         data = pago_schema.load(request.get_json(), partial=True)
+        venta = pago.venta
         
-        # Validar monto si se modifica
-        if 'monto' in data:
-            diferencia = data['monto'] - pago.monto
-            if diferencia > pago.venta.saldo_pendiente + pago.monto:
+        if data.monto:
+            nuevo_monto = Decimal(data.monto)
+            saldo_actual = venta.total - sum(p.monto for p in venta.pagos if p.id != pago_id)
+            
+            if nuevo_monto > saldo_actual:
                 return {"error": "Nuevo monto excede saldo pendiente"}, 400
             
-        for key, value in data.items():
-            setattr(pago, key, value)
-        
-        pago.venta.actualizar_estado()
+        updated_pago = pago_schema.load(
+            request.get_json(),
+            instance=pago,
+            partial=True
+        )
+        venta.actualizar_estado()
         db.session.commit()
-        return pago_schema.dump(pago), 200
-
+        
+        return pago_schema.dump(updated_pago), 200
     @jwt_required()
     @handle_db_errors
     def delete(self, pago_id):
@@ -92,4 +103,4 @@ class PagoResource(Resource):
         db.session.delete(pago)
         venta.actualizar_estado()
         db.session.commit()
-        return "", 204
+        return "Pago eliminado", 200

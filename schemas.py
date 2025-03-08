@@ -72,13 +72,16 @@ class LoteSchema(SQLAlchemyAutoSchema):
         include_fk = True
 
 class MermaSchema(SQLAlchemyAutoSchema):
-    lote = fields.Nested(LoteSchema, only=("id", "peso_seco_kg"), dump_only=True)
+    lote = fields.Nested(LoteSchema, only=("id", "cantidad_disponible_kg"), dump_only=True)
+    usuario = fields.Nested(UserSchema(only=("id", "username")), dump_only=True)
+    cantidad_kg = fields.Decimal(as_string=True)
 
     class Meta:
         model = Merma
         load_instance = True
         unknown = EXCLUDE
         sqla_session = db.session 
+        include_fk = True
 
 class InventarioSchema(SQLAlchemyAutoSchema):
     presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "capacidad_kg"))
@@ -104,7 +107,7 @@ class ClienteSchema(SQLAlchemyAutoSchema):
 
 class MovimientoSchema(SQLAlchemyAutoSchema):
     presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre"))
-    lote = fields.Nested(LoteSchema, only=("id", "peso_seco_kg"))
+    lote = fields.Nested(LoteSchema, only=("id", "cantidad_disponible_kg"))
     usuario = fields.Nested(UserSchema, only=("id", "username"))
     cantidad = fields.Decimal(as_string=True)
 
@@ -144,24 +147,29 @@ class VentaSchema(SQLAlchemyAutoSchema):
         unknown = EXCLUDE
 
 class PagoSchema(SQLAlchemyAutoSchema):
-    venta = fields.Nested(VentaSchema, only=("id", "total"))
-    usuario = fields.Nested("UserSchema", only=("id", "username"))
+    venta = fields.Nested(VentaSchema, only=("id", "total"), dump_only=True)
+    usuario = fields.Nested(UserSchema, only=("id", "username"), dump_only=True)
+    monto = fields.Decimal(as_string=True)
 
     class Meta:
         model = Pago
         load_instance = True
         unknown = EXCLUDE
         sqla_session = db.session 
+        include_fk = True
 
 class GastoSchema(SQLAlchemyAutoSchema):
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
     usuario = fields.Nested(UserSchema, only=("id", "username"))
+    monto = fields.Decimal(as_string=True)
+
 
     class Meta:
         model = Gasto
         load_instance = True
         unknown = EXCLUDE
-        sqla_session = db.session 
+        sqla_session = db.session
+        include_fk = True
 
 # Inicializar esquemas
 user_schema = UserSchema()

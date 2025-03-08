@@ -60,8 +60,7 @@ class VentaResource(Resource):
     @mismo_almacen_o_admin
     @handle_db_errors
     def post(self):
-        json_data = request.get_json()
-        data = venta_schema.load(json_data)
+        data = venta_schema.load(request.get_json())
 
         cliente = Cliente.query.get_or_404(data.cliente_id)
         almacen = Almacen.query.get_or_404(data.almacen_id)

@@ -2,9 +2,10 @@ from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
 from models import Merma, Lote, Inventario, PresentacionProducto
-from schemas import merma_schema, mermas_schema
+from schemas import merma_schema, mermas_schema, lote_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
+from decimal import Decimal
 
 class MermaResource(Resource):
     @jwt_required()
@@ -43,80 +44,76 @@ class MermaResource(Resource):
     @handle_db_errors
     def post(self):
         data = merma_schema.load(request.get_json())
-        lote = Lote.query.get_or_404(data["lote_id"])
+        lote = Lote.query.get_or_404(data.lote_id)
         
-        # Validar que la merma no exceda el peso seco del lote
-        if data["cantidad_kg"] > lote.peso_seco_kg:
-            return {"error": "La merma supera el peso seco del lote"}, 400
+        # Validar cantidad
+        if Decimal(data.cantidad_kg) > lote.cantidad_disponible_kg:
+            return {
+                "error": "Merma excede stock disponible",
+                "stock_disponible": str(lote.cantidad_disponible_kg)
+            }, 400
         
-        # Crear merma
-        nueva_merma = Merma(**data)
-        db.session.add(nueva_merma)
+        # Crear merma básica
+        nueva_merma = Merma(
+            lote_id=lote.id,
+            cantidad_kg=data.cantidad_kg,
+            usuario_id=get_jwt().get('sub')
+        )
+
+        try:
+            # Actualizar lote
+            lote.cantidad_disponible_kg -= nueva_merma.cantidad_kg
+            
+            db.session.add(nueva_merma)
+            db.session.commit()
+            
+            return merma_schema.dump(nueva_merma), 201
         
-        # Si se convierte a briquetas, actualizar inventario
-        if data.get("convertido_a_briquetas"):
-            presentacion_briquetas = PresentacionProducto.query.filter_by(
-                tipo="briqueta"
-            ).first()
-            
-            if not presentacion_briquetas:
-                return {"error": "No existe una presentación para briquetas"}, 400
-            
-            inventario = Inventario.query.filter_by(
-                presentacion_id=presentacion_briquetas.id,
-                almacen_id=lote.almacen_id  # Asume que el lote está asociado a un almacén
-            ).first()
-            
-            if not inventario:
-                inventario = Inventario(
-                    presentacion_id=presentacion_briquetas.id,
-                    almacen_id=lote.almacen_id,
-                    cantidad=0
-                )
-                db.session.add(inventario)
-            
-            inventario.cantidad += data["cantidad_kg"]  # Añadir merma como briquetas
-        
-        db.session.commit()
-        return merma_schema.dump(nueva_merma), 201
+        except Exception as e:
+            db.session.rollback()
+            return {"error": str(e)}, 500
+       
 
     @jwt_required()
     @handle_db_errors
     def put(self, merma_id):
         merma = Merma.query.get_or_404(merma_id)
         data = merma_schema.load(request.get_json(), partial=True)
+        lote = merma.lote
         
-        # Validar cambios críticos
-        if "lote_id" in data and data["lote_id"] != merma.lote_id:
-            return {"error": "No se puede modificar el lote asociado a una merma"}, 400
-        
-        # Actualizar campos permitidos
-        for key, value in data.items():
-            setattr(merma, key, value)
-        
+        if data.cantidad_kg:
+            nueva_cantidad = Decimal(data.cantidad_kg)
+            diferencia = nueva_cantidad - merma.cantidad_kg
+            
+            # Validar nueva cantidad
+            if (lote.cantidad_disponible_kg - diferencia) < 0:
+                return {"error": "Nueva cantidad inválida"}, 400
+            
+            # Actualizar lote
+            lote.cantidad_disponible_kg -= diferencia
+
+        ##if data.convertido_a_briquetas: falta agregar
+
+        updated_merma = merma_schema.load(
+        request.get_json(),
+        instance=merma,
+        partial=True
+        )
         db.session.commit()
-        return merma_schema.dump(merma), 200
+        return merma_schema.dump(updated_merma), 200
 
     @jwt_required()
     @handle_db_errors
     def delete(self, merma_id):
         merma = Merma.query.get_or_404(merma_id)
-        
-        # Revertir inventario si se había convertido a briquetas
-        if merma.convertido_a_briquetas:
-            presentacion_briquetas = PresentacionProducto.query.filter_by(
-                tipo="briqueta"
-            ).first()
+        lote = merma.lote
+        try:
+            # Revertir cantidad en lote
+            lote.cantidad_disponible_kg += merma.cantidad_kg
             
-            if presentacion_briquetas:
-                inventario = Inventario.query.filter_by(
-                    presentacion_id=presentacion_briquetas.id,
-                    almacen_id=merma.lote.almacen_id
-                ).first()
-                
-                if inventario:
-                    inventario.cantidad -= merma.cantidad_kg
-        
-        db.session.delete(merma)
-        db.session.commit()
-        return "", 204
+            db.session.delete(merma)
+            db.session.commit()
+            return "Eliminado correctamente", 200        
+        except Exception as e:
+            db.session.rollback()
+            return {"error": str(e)}, 500
