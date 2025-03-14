@@ -147,6 +147,26 @@ CREATE TABLE gastos (
     almacen_id INTEGER REFERENCES almacenes(id),
     usuario_id INTEGER REFERENCES users(id)
 );
+
+CREATE TABLE pedidos (
+    id SERIAL PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    almacen_id INTEGER NOT NULL REFERENCES almacenes(id) ON DELETE CASCADE,
+    vendedor_id INTEGER REFERENCES users(id),
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_entrega TIMESTAMP NOT NULL,
+    estado VARCHAR(20) DEFAULT 'programado' CHECK (estado IN ('programado', 'confirmado', 'entregado', 'cancelado')),
+    notas TEXT
+);
+
+CREATE TABLE pedido_detalles (
+    id SERIAL PRIMARY KEY,
+    pedido_id INTEGER NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+    presentacion_id INTEGER NOT NULL REFERENCES presentaciones_producto(id) ON DELETE CASCADE,
+    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+    precio_estimado NUMERIC(12,2) NOT NULL
+);
+
 -- Insertar datos de productos
 INSERT INTO productos (nombre, descripcion, precio_compra, precio_venta, stock, stock_minimo) VALUES
 ('Saco de 30kg', 'Saco de carbon vegetal en presentacion de 30kg', 42, 87, 0),

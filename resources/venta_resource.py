@@ -80,7 +80,18 @@ class VentaResource(Resource):
 
             if not inventario or inventario.cantidad < detalle.cantidad:
                 return {"error": f"Stock insuficiente para {presentacion.nombre}"}, 400
+            if not detalle.precio_unitario:
+                detalle.precio_unitario = presentacion.precio_venta
 
+            if not inventario:
+                return {"error": f"La presentación {presentacion.nombre} no está disponible en este almacén"}, 400
+    
+            if inventario.cantidad < detalle.cantidad:
+              return {"error": f"Stock insuficiente para {presentacion.nombre} (Disponible: {inventario.cantidad})"}, 400
+
+            # Asignar precio unitario si no viene
+            if not hasattr(detalle, 'precio_unitario') or not detalle.precio_unitario:
+                detalle.precio_unitario = presentacion.precio_venta
             # Registrar datos para el movimiento
             movimientos.append({
                 "presentacion_id": presentacion.id,

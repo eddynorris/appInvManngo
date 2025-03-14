@@ -37,6 +37,7 @@ class PresentacionProducto(db.Model):
     tipo = db.Column(db.String(20), nullable=False)  # "bruto", "procesado", "merma", "briqueta", "detalle"
     precio_venta = db.Column(db.Numeric(12, 2), nullable=False)  # Precio al público
     activo = db.Column(db.Boolean, default=True)
+    url_foto = db.Column(db.String(255))
 
     # Relaciones
     producto = db.relationship('Producto', backref=db.backref('presentaciones', lazy=True))
@@ -188,7 +189,6 @@ class Cliente(db.Model):
         return f'<Cliente {self.nombre}>'
 
 
-
 class Pago(db.Model):
     __tablename__ = "pagos"
     id = db.Column(db.Integer, primary_key=True)
@@ -198,6 +198,7 @@ class Pago(db.Model):
     metodo_pago = db.Column(db.String(20), nullable=False)  # "efectivo", "transferencia", "tarjeta"
     referencia = db.Column(db.String(50))  # Número de transacción o comprobante
     usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Quién registró el pago
+    url_comprobante = db.Column(db.String(255))
 
     __table_args__ = (
         CheckConstraint("metodo_pago IN ('efectivo', 'transferencia', 'tarjeta')"),
@@ -242,3 +243,39 @@ class Gasto(db.Model):
     __table_args__ = (
         CheckConstraint("categoria IN ('logistica', 'personal', 'otros')"),
     )
+
+class Pedido(db.Model):
+    __tablename__ = 'pedidos'
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), nullable=False)
+    almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), nullable=False)
+    vendedor_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    fecha_creacion = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    fecha_entrega = db.Column(db.DateTime(timezone=True), nullable=False)
+    estado = db.Column(db.String(20), default='programado')  # programado, confirmado, entregado, cancelado
+    notas = db.Column(db.Text)
+    
+    # Relaciones
+    cliente = db.relationship('Cliente', backref=db.backref('pedidos', lazy=True))
+    almacen = db.relationship('Almacen')
+    vendedor = db.relationship('Users')
+    detalles = db.relationship('PedidoDetalle', backref='pedido', lazy=True, cascade="all, delete-orphan")
+    
+    @property
+    def total_estimado(self):
+        return sum(detalle.cantidad * detalle.precio_estimado for detalle in self.detalles)
+    
+    __table_args__ = (
+        CheckConstraint("estado IN ('programado', 'confirmado', 'entregado', 'cancelado')"),
+    )
+
+class PedidoDetalle(db.Model):
+    __tablename__ = 'pedido_detalles'
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedidos.id', ondelete='CASCADE'), nullable=False)
+    presentacion_id = db.Column(db.Integer, db.ForeignKey('presentaciones_producto.id', ondelete='CASCADE'), nullable=False)
+    cantidad = db.Column(db.Integer, nullable=False)
+    precio_estimado = db.Column(db.Numeric(12, 2), nullable=False)
+    
+    # Relación
+    presentacion = db.relationship('PresentacionProducto')

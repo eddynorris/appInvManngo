@@ -13,6 +13,8 @@ from .proveedor_resource import ProveedorResource
 from .user_resource import UserResource
 from .venta_resource import VentaResource
 from .ventadetalle_resource import VentaDetalleResource
+from .pedido_resource import PedidoResource
+from .pedido_resource import PedidoConversionResource
 
 __all__ = [
     'AuthResource',
@@ -29,5 +31,7 @@ __all__ = [
     'PresentacionResource',
     'ProveedorResource',
     'VentaDetalleResource',
-    'PagoResource'
+    'PagoResource',
+    'PedidoResource',
+    'PedidoConversionResource'
 ]

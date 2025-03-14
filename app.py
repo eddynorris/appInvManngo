@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_restful import Api
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -16,6 +16,8 @@ from resources.inventario_resource import InventarioResource
 from resources.lote_resource import LoteResource
 from resources.merma_resource import MermaResource
 from resources.presentacion_resource import PresentacionResource
+from resources.pedido_resource import PedidoResource, PedidoConversionResource
+
 
 from extensions import db, jwt  # Importa la instancia de SQLAlchemy
 import os
@@ -44,12 +46,20 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Use environment variable or fallback to a hardcoded key (for development only)
 
+# Configuración para el manejo de archivos
+app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'pdf'}
+
+# Crear directorio de uploads si no existe
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'presentaciones'), exist_ok=True)
+os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'comprobantes'), exist_ok=True)
 
 # Additional JWT configuration for better security
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 60000  # Token expires in 1 hour
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 12000  # Token expires in 2 hour
 app.config['JWT_ALGORITHM'] = 'HS256'  # Specify the algorithm
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'mamahuevo')
-
 
 db.init_app(app)
 jwt.init_app(app)  # Inicializa JWTManager
@@ -88,6 +98,11 @@ def handle_internal_server_error(e):
         "details": str(e)
     }), 500
 
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    """Sirve archivos subidos"""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # Registrar recursos
 api.add_resource(AuthResource, '/auth')
 api.add_resource(RegisterResource, '/registrar')
@@ -104,6 +119,8 @@ api.add_resource(InventarioResource, '/inventarios', '/inventarios/<int:inventar
 api.add_resource(PresentacionResource, '/presentaciones', '/presentaciones/<int:presentacion_id>')
 api.add_resource(MermaResource, '/mermas', '/mermas/<int:merma_id>')
 api.add_resource(LoteResource, '/lotes', '/lotes/<int:lote_id>')
+api.add_resource(PedidoResource, '/pedidos', '/pedidos/<int:pedido_id>')
+api.add_resource(PedidoConversionResource, '/pedidos/<int:pedido_id>/convertir')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

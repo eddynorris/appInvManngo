@@ -3,7 +3,7 @@ from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from models import (
     Users, Producto, Almacen, Cliente, Gasto, Movimiento, 
     Venta, VentaDetalle, Proveedor, Pago, Inventario,
-    PresentacionProducto, Lote, Merma  # Nuevos modelos
+    PresentacionProducto, Lote, Merma, PedidoDetalle, Pedido  # Nuevos modelos
 )
 from extensions import db
 
@@ -171,6 +171,33 @@ class GastoSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
+class PedidoDetalleSchema(SQLAlchemyAutoSchema):
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta"))
+    precio_estimado = fields.Decimal(as_string=True)
+
+    class Meta:
+        model = PedidoDetalle
+        load_instance = True
+        unknown = EXCLUDE
+        sqla_session = db.session
+        include_fk = True
+        exclude = ("pedido_id",)
+
+class PedidoSchema(SQLAlchemyAutoSchema):
+    cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))   
+    almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
+    vendedor = fields.Nested(UserSchema, only=("id", "username"))
+    detalles = fields.List(fields.Nested(PedidoDetalleSchema))
+    total_estimado = fields.Decimal(as_string=True, dump_only=True)
+
+    class Meta:
+        model = Pedido
+        load_instance = True
+        sqla_session = db.session
+        include_relationships = True
+        include_fk = True
+        unknown = EXCLUDE
+
 # Inicializar esquemas
 user_schema = UserSchema()
 users_schema = UserSchema(many=True)
@@ -213,3 +240,9 @@ ventas_detalle_schema = VentaDetalleSchema(many=True)
 
 inventario_schema = InventarioSchema()
 inventarios_schema = InventarioSchema(many=True)
+
+pedido_schema = PedidoSchema()
+pedidos_schema = PedidoSchema(many=True)
+
+pedido_detalle_schema = PedidoDetalleSchema()
+pedidos_detalle_schema = PedidoDetalleSchema(many=True)

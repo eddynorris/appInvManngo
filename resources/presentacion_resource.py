@@ -1,10 +1,13 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
-from flask import request
+from flask import request, current_app
+from werkzeug.datastructures import FileStorage
+from utils.file_handlers import save_file, delete_file
 from models import PresentacionProducto, Inventario, VentaDetalle
 from schemas import presentacion_schema, presentaciones_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, rol_requerido
+import os
 
 class PresentacionResource(Resource):
     @jwt_required()
@@ -47,51 +50,152 @@ class PresentacionResource(Resource):
     @rol_requerido('admin', 'gerente')
     @handle_db_errors
     def post(self):
-        """Crea nueva presentación (Requiere rol admin/gerente)"""
-        data = presentacion_schema.load(request.get_json())
-
-                # Verifica si ya existe la combinación producto_id + nombre
-        existe = PresentacionProducto.query.filter_by(
-            producto_id=data.producto_id,
-            nombre=data.nombre
-        ).first()
-
-        if existe:
-            return {
-                "error": "Conflicto de unicidad",
-                "mensaje": f"Ya existe una presentación con el nombre '{data['nombre']}' para este producto."
-            }, 409  # Conflict
+        """Crea nueva presentación con posibilidad de subir foto"""
+        # Procesar datos JSON
+        if 'application/json' in request.content_type:
+            data = presentacion_schema.load(request.get_json())
             
-        db.session.add(data)
-        db.session.commit()
-        return presentacion_schema.dump(data), 201
+            # Verificar unicidad
+            existe = PresentacionProducto.query.filter_by(
+                producto_id=data.producto_id,
+                nombre=data.nombre
+            ).first()
+            
+            if existe:
+                return {
+                    "error": "Conflicto de unicidad",
+                    "mensaje": f"Ya existe una presentación con el nombre '{data.nombre}' para este producto."
+                }, 409
+            
+            db.session.add(data)
+            db.session.commit()
+            return presentacion_schema.dump(data), 201
+        
+        # Procesar formulario multipart con archivos
+        elif 'multipart/form-data' in request.content_type:
+            # Obtener datos del formulario
+            producto_id = request.form.get('producto_id')
+            nombre = request.form.get('nombre')
+            capacidad_kg = request.form.get('capacidad_kg')
+            tipo = request.form.get('tipo')
+            precio_venta = request.form.get('precio_venta')
+            activo = request.form.get('activo', 'true').lower() == 'true'
+            
+            # Validaciones básicas
+            if not all([producto_id, nombre, capacidad_kg, tipo, precio_venta]):
+                return {"error": "Faltan campos requeridos"}, 400
+            
+            # Verificar unicidad
+            existe = PresentacionProducto.query.filter_by(
+                producto_id=producto_id,
+                nombre=nombre
+            ).first()
+            
+            if existe:
+                return {
+                    "error": "Conflicto de unicidad",
+                    "mensaje": f"Ya existe una presentación con el nombre '{nombre}' para este producto."
+                }, 409
+            
+            # Procesar imagen si existe
+            url_foto = None
+            if 'foto' in request.files:
+                file = request.files['foto']
+                url_foto = save_file(file, 'presentaciones')
+            
+            # Crear presentación
+            nueva_presentacion = PresentacionProducto(
+                producto_id=producto_id,
+                nombre=nombre,
+                capacidad_kg=capacidad_kg,
+                tipo=tipo,
+                precio_venta=precio_venta,
+                activo=activo,
+                url_foto=url_foto
+            )
+            
+            db.session.add(nueva_presentacion)
+            db.session.commit()
+            
+            return presentacion_schema.dump(nueva_presentacion), 201
+        
+        return {"error": "Tipo de contenido no soportado"}, 415
 
     @jwt_required()
     @rol_requerido('admin', 'gerente')
     @handle_db_errors
     def put(self, presentacion_id):
+        """Actualiza presentación con posibilidad de cambiar foto"""
         presentacion = PresentacionProducto.query.get_or_404(presentacion_id)
-        updated_presentacion = presentacion_schema.load(
-            request.get_json(),
-            instance=presentacion,
-            partial=True
-        )
+        
+        # Actualización JSON
+        if 'application/json' in request.content_type:
+            updated_presentacion = presentacion_schema.load(
+                request.get_json(),
+                instance=presentacion,
+                partial=True
+            )
+            
+            # Validación única adicional
+            if updated_presentacion.nombre != presentacion.nombre:
+                if PresentacionProducto.query.filter(
+                    PresentacionProducto.producto_id == presentacion.producto_id,
+                    PresentacionProducto.nombre == updated_presentacion.nombre,
+                    PresentacionProducto.id != presentacion_id
+                ).first():
+                    return {"error": "Nombre ya existe para este producto"}, 409
+            
+            db.session.commit()
+            return presentacion_schema.dump(updated_presentacion), 200
+        
+        # Actualización con formulario multipart
+        elif 'multipart/form-data' in request.content_type:
+            # Obtener datos del formulario
+            if 'nombre' in request.form:
+                nuevo_nombre = request.form.get('nombre')
+                if nuevo_nombre != presentacion.nombre:
+                    if PresentacionProducto.query.filter(
+                        PresentacionProducto.producto_id == presentacion.producto_id,
+                        PresentacionProducto.nombre == nuevo_nombre,
+                        PresentacionProducto.id != presentacion_id
+                    ).first():
+                        return {"error": "Nombre ya existe para este producto"}, 409
+                presentacion.nombre = nuevo_nombre
+            
+            # Actualizar los demás campos si están presentes
+            if 'capacidad_kg' in request.form:
+                presentacion.capacidad_kg = request.form.get('capacidad_kg')
+            if 'tipo' in request.form:
+                presentacion.tipo = request.form.get('tipo')
+            if 'precio_venta' in request.form:
+                presentacion.precio_venta = request.form.get('precio_venta')
+            if 'activo' in request.form:
+                presentacion.activo = request.form.get('activo').lower() == 'true'
+            
+            # Procesar imagen si existe
+            if 'foto' in request.files:
+                file = request.files['foto']
+                # Eliminar foto anterior si existe
+                if presentacion.url_foto:
+                    delete_file(presentacion.url_foto)
+                # Guardar nueva foto
+                presentacion.url_foto = save_file(file, 'presentaciones')
+            
+            # Si se especifica eliminar la foto
+            if request.form.get('eliminar_foto') == 'true' and presentacion.url_foto:
+                delete_file(presentacion.url_foto)
+                presentacion.url_foto = None
+            
+            db.session.commit()
+            return presentacion_schema.dump(presentacion), 200
+        
+        return {"error": "Tipo de contenido no soportado"}, 415
 
-        # Validación única adicional
-        if PresentacionProducto.query.filter(
-            PresentacionProducto.producto_id == presentacion.producto_id,
-            PresentacionProducto.nombre == updated_presentacion.nombre,
-            PresentacionProducto.id != presentacion_id
-        ).first():
-            return {"error": "Nombre ya existe para este producto"}, 409
-
-        db.session.commit()
-        return presentacion_schema.dump(updated_presentacion), 200
     @jwt_required()
     @rol_requerido('admin')
     @handle_db_errors
     def delete(self, presentacion_id):
-        """Elimina presentación (Solo admin) si no tiene registros asociados"""
+        """Elimina presentación y su foto asociada"""
         presentacion = PresentacionProducto.query.get_or_404(presentacion_id)
 
         # Verificar dependencias
@@ -99,6 +203,10 @@ class PresentacionResource(Resource):
             return {"error": "Existen registros de inventario asociados"}, 400
         if VentaDetalle.query.filter_by(presentacion_id=presentacion_id).first():
             return {"error": "Existen ventas asociadas"}, 400
+
+        # Eliminar foto si existe
+        if presentacion.url_foto:
+            delete_file(presentacion.url_foto)
 
         db.session.delete(presentacion)
         db.session.commit()

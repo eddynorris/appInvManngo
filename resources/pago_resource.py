@@ -7,6 +7,9 @@ from schemas import pago_schema, pagos_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE
 from decimal import Decimal
+from utils.file_handlers import save_file, delete_file
+from werkzeug.datastructures import FileStorage
+from flask import request, current_app
 
 class PagoResource(Resource):
     @jwt_required()
@@ -45,62 +48,154 @@ class PagoResource(Resource):
     @jwt_required()
     @handle_db_errors
     def post(self):
-        """Registra nuevo pago y actualiza estado de la venta"""
-        data = pago_schema.load(request.get_json())
+        """Registra nuevo pago con posibilidad de adjuntar comprobante"""
+        # Procesar datos JSON
+        if 'application/json' in request.content_type:
+            data = pago_schema.load(request.get_json())
+            venta = Venta.query.get_or_404(data.venta_id)
+            
+            saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
+            
+            if Decimal(data.monto) > saldo_pendiente_venta:
+                return {"error": "Monto excede el saldo pendiente"}, 400
+            
+            nuevo_pago = Pago(
+                venta_id=venta.id,
+                monto=data.monto,
+                metodo_pago=data.metodo_pago,
+                referencia=data.referencia,
+                usuario_id=get_jwt().get('sub')
+            )
+            
+            db.session.add(nuevo_pago)
+            venta.actualizar_estado()
+            db.session.commit()
+            
+            return pago_schema.dump(nuevo_pago), 201
         
-        venta = Venta.query.get_or_404(data.venta_id)
-
-        saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
-
-        if Decimal(data.monto) > saldo_pendiente_venta:
-            return {"error": "Monto excede el saldo pendiente"}, 400
+        # Procesar formulario multipart con archivos
+        elif 'multipart/form-data' in request.content_type:
+            # Obtener datos del formulario
+            venta_id = request.form.get('venta_id')
+            monto = request.form.get('monto')
+            metodo_pago = request.form.get('metodo_pago')
+            referencia = request.form.get('referencia')
+            
+            # Validaciones básicas
+            if not all([venta_id, monto, metodo_pago]):
+                return {"error": "Faltan campos requeridos"}, 400
+            
+            venta = Venta.query.get_or_404(venta_id)
+            saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
+            
+            if Decimal(monto) > saldo_pendiente_venta:
+                return {"error": "Monto excede el saldo pendiente"}, 400
+            
+            # Procesar comprobante si existe
+            url_comprobante = None
+            if 'comprobante' in request.files:
+                file = request.files['comprobante']
+                url_comprobante = save_file(file, 'comprobantes')
+            
+            # Crear pago
+            nuevo_pago = Pago(
+                venta_id=venta_id,
+                monto=monto,
+                metodo_pago=metodo_pago,
+                referencia=referencia,
+                usuario_id=get_jwt().get('sub'),
+                url_comprobante=url_comprobante
+            )
+            
+            db.session.add(nuevo_pago)
+            venta.actualizar_estado()
+            db.session.commit()
+            
+            return pago_schema.dump(nuevo_pago), 201
         
-        nuevo_pago = Pago(
-        venta_id=venta.id,
-        monto=data.monto,
-        metodo_pago=data.metodo_pago,
-        referencia=data.referencia,
-        usuario_id=get_jwt().get('sub')
-        )
-
-        db.session.add(nuevo_pago)
-        
-        venta.actualizar_estado()
-        db.session.commit()
-        
-        return pago_schema.dump(nuevo_pago), 201
+        return {"error": "Tipo de contenido no soportado"}, 415
 
     @jwt_required()
     @handle_db_errors
     def put(self, pago_id):
+        """Actualiza pago con posibilidad de cambiar comprobante"""
         pago = Pago.query.get_or_404(pago_id)
-        data = pago_schema.load(request.get_json(), partial=True)
         venta = pago.venta
         
-        if data.monto:
-            nuevo_monto = Decimal(data.monto)
-            saldo_actual = venta.total - sum(p.monto for p in venta.pagos if p.id != pago_id)
+        # Actualización JSON
+        if 'application/json' in request.content_type:
+            data = pago_schema.load(request.get_json(), partial=True)
             
-            if nuevo_monto > saldo_actual:
-                return {"error": "Nuevo monto excede saldo pendiente"}, 400
+            if data.monto:
+                nuevo_monto = Decimal(data.monto)
+                saldo_actual = venta.total - sum(p.monto for p in venta.pagos if p.id != pago_id)
+                
+                if nuevo_monto > saldo_actual:
+                    return {"error": "Nuevo monto excede saldo pendiente"}, 400
             
-        updated_pago = pago_schema.load(
-            request.get_json(),
-            instance=pago,
-            partial=True
-        )
-        venta.actualizar_estado()
-        db.session.commit()
+            updated_pago = pago_schema.load(
+                request.get_json(),
+                instance=pago,
+                partial=True
+            )
+            
+            venta.actualizar_estado()
+            db.session.commit()
+            
+            return pago_schema.dump(updated_pago), 200
         
-        return pago_schema.dump(updated_pago), 200
+        # Actualización con formulario multipart
+        elif 'multipart/form-data' in request.content_type:
+            # Actualizar monto si se proporciona
+            if 'monto' in request.form:
+                nuevo_monto = Decimal(request.form.get('monto'))
+                saldo_actual = venta.total - sum(p.monto for p in venta.pagos if p.id != pago_id)
+                
+                if nuevo_monto > saldo_actual:
+                    return {"error": "Nuevo monto excede saldo pendiente"}, 400
+                
+                pago.monto = nuevo_monto
+            
+            # Actualizar otros campos
+            if 'metodo_pago' in request.form:
+                pago.metodo_pago = request.form.get('metodo_pago')
+            if 'referencia' in request.form:
+                pago.referencia = request.form.get('referencia')
+            
+            # Procesar comprobante si existe
+            if 'comprobante' in request.files:
+                file = request.files['comprobante']
+                # Eliminar comprobante anterior si existe
+                if pago.url_comprobante:
+                    delete_file(pago.url_comprobante)
+                # Guardar nuevo comprobante
+                pago.url_comprobante = save_file(file, 'comprobantes')
+            
+            # Si se especifica eliminar el comprobante
+            if request.form.get('eliminar_comprobante') == 'true' and pago.url_comprobante:
+                delete_file(pago.url_comprobante)
+                pago.url_comprobante = None
+            
+            venta.actualizar_estado()
+            db.session.commit()
+            
+            return pago_schema.dump(pago), 200
+        
+        return {"error": "Tipo de contenido no soportado"}, 415
+
     @jwt_required()
     @handle_db_errors
     def delete(self, pago_id):
-        """Elimina pago y actualiza estado de la venta relacionada"""
+        """Elimina pago y su comprobante asociado"""
         pago = Pago.query.get_or_404(pago_id)
         venta = pago.venta
+        
+        # Eliminar comprobante si existe
+        if pago.url_comprobante:
+            delete_file(pago.url_comprobante)
         
         db.session.delete(pago)
         venta.actualizar_estado()
         db.session.commit()
+        
         return "Pago eliminado", 200
