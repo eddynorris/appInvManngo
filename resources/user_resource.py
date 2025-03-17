@@ -2,7 +2,7 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Users
+from models import Users, Almacen
 from schemas import user_schema, users_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, rol_requerido
@@ -50,26 +50,26 @@ class UserResource(Resource):
     @rol_requerido('admin')
     @handle_db_errors
     def post(self):
-        data = request.get_json()
-        
+        data = user_schema.load(request.get_json())
         # Verificar que el username no exista
-        if Users.query.filter_by(username=data.get('username')).first():
+        if Users.query.filter_by(username=data.username).first():
             return {"message": "El nombre de usuario ya existe"}, 400
         
         # Hashear la contraseña
-        if 'password' in data:
-            data['password'] = generate_password_hash(data['password'])
+        if data.password:
+            data.password = generate_password_hash(data.password)
         
         # Validar rol
-        if data.get('rol') not in ['admin', 'gerente', 'usuario']:
+        if data.rol not in ('admin', 'gerente', 'usuario'):
             return {"message": "Rol inválido. Debe ser admin, gerente o usuario"}, 400
         
-        # Crear usuario
-        nuevo_usuario = user_schema.load(data)
-        db.session.add(nuevo_usuario)
+        if data.almacen_id:
+            Almacen.query.get_or_404(data.almacen_id)
+
+        db.session.add(data)
         db.session.commit()
         
-        return user_schema.dump(nuevo_usuario), 201
+        return user_schema.dump(data), 201
 
     @jwt_required()
     @rol_requerido('admin')

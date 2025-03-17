@@ -1,11 +1,12 @@
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt
 from flask import request
-from models import Pedido, PedidoDetalle, Cliente, PresentacionProducto, Almacen, Inventario, Movimiento
-from schemas import pedido_schema, pedidos_schema
+from models import Pedido, PedidoDetalle, Cliente, PresentacionProducto, Almacen, Inventario, Movimiento, VentaDetalle, Venta
+from schemas import pedido_schema, pedidos_schema, venta_schema
 from extensions import db
 from common import handle_db_errors, MAX_ITEMS_PER_PAGE, mismo_almacen_o_admin
 from datetime import datetime, timezone
+from decimal import Decimal
 
 class PedidoResource(Resource):
     @jwt_required()
@@ -66,9 +67,7 @@ class PedidoResource(Resource):
     @mismo_almacen_o_admin
     @handle_db_errors
     def post(self):
-        """
-        Crea un nuevo pedido programado
-        """
+
         data = pedido_schema.load(request.get_json())
         
         # Validaciones
@@ -143,16 +142,17 @@ class PedidoConversionResource(Resource):
         """
         Convierte un pedido en una venta real
         """
-        from models import Venta, VentaDetalle
-        from schemas import venta_schema
-        
         pedido = Pedido.query.get_or_404(pedido_id)
         
-        # Validar que no esté ya entregado
+        # Validaciones previas
         if pedido.estado == 'entregado':
             return {"error": "Este pedido ya fue entregado"}, 400
+            
+        if pedido.estado == 'cancelado':
+            return {"error": "No se puede convertir un pedido cancelado"}, 400
         
         # Verificar stock antes de proceder
+        inventarios_insuficientes = []
         for detalle in pedido.detalles:
             inventario = Inventario.query.filter_by(
                 presentacion_id=detalle.presentacion_id,
@@ -160,33 +160,46 @@ class PedidoConversionResource(Resource):
             ).first()
             
             if not inventario or inventario.cantidad < detalle.cantidad:
-                return {
-                    "error": f"Stock insuficiente para {detalle.presentacion.nombre}",
-                    "stock_disponible": inventario.cantidad if inventario else 0
-                }, 400
+                inventarios_insuficientes.append({
+                    "presentacion": detalle.presentacion.nombre,
+                    "solicitado": detalle.cantidad,
+                    "disponible": inventario.cantidad if inventario else 0
+                })
         
-        # Crear venta desde pedido
+        if inventarios_insuficientes:
+            return {
+                "error": "Stock insuficiente para completar el pedido",
+                "detalles": inventarios_insuficientes
+            }, 400
+        
+        # Crear nueva venta desde el pedido
         venta = Venta(
             cliente_id=pedido.cliente_id,
             almacen_id=pedido.almacen_id,
-            tipo_pago='contado',  # Valor predeterminado, puede modificarse
+            tipo_pago=request.json.get('tipo_pago', 'contado'),
             estado_pago='pendiente'
         )
         
-        # Agregar detalles
+        # Agregar detalles y calcular total
         total = 0
         for detalle_pedido in pedido.detalles:
+            precio_actual = detalle_pedido.presentacion.precio_venta
+            
+            # Usar precio actual o el estimado, según configuración
+            usar_precio_actual = request.json.get('usar_precio_actual', True)
+            precio_final = precio_actual if usar_precio_actual else detalle_pedido.precio_estimado
+            
             detalle_venta = VentaDetalle(
                 presentacion_id=detalle_pedido.presentacion_id,
                 cantidad=detalle_pedido.cantidad,
-                precio_unitario=detalle_pedido.precio_estimado
+                precio_unitario=precio_final
             )
             venta.detalles.append(detalle_venta)
             total += detalle_venta.cantidad * detalle_venta.precio_unitario
         
         venta.total = total
         
-        # Actualizar inventario y crear movimientos
+        # Actualizar inventario y crear movimientos de salida
         claims = get_jwt()
         for detalle in venta.detalles:
             inventario = Inventario.query.filter_by(
@@ -196,15 +209,22 @@ class PedidoConversionResource(Resource):
             
             inventario.cantidad -= detalle.cantidad
             
+            # Registrar movimiento
             movimiento = Movimiento(
                 tipo='salida',
                 presentacion_id=detalle.presentacion_id,
                 lote_id=inventario.lote_id,
                 cantidad=detalle.cantidad,
-                usuario_id=claims['sub'],
+                usuario_id=claims.get('sub'),
                 motivo=f"Venta ID: {venta.id} - Cliente: {pedido.cliente.nombre} (desde pedido {pedido.id})"
             )
             db.session.add(movimiento)
+        
+        # Actualizar cliente si es necesario
+        if venta.consumo_diario_kg:
+            cliente = Cliente.query.get(venta.cliente_id)
+            cliente.ultima_fecha_compra = datetime.now(timezone.utc)
+            cliente.frecuencia_compra_dias = (venta.total / Decimal(venta.consumo_diario_kg)).quantize(Decimal('1.00'))
         
         # Marcar pedido como entregado
         pedido.estado = 'entregado'
@@ -216,3 +236,5 @@ class PedidoConversionResource(Resource):
             "message": "Pedido convertido a venta exitosamente",
             "venta": venta_schema.dump(venta)
         }, 201
+    
+    

@@ -12,6 +12,7 @@ class Users(db.Model):
     almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='SET NULL'))
     
     movimientos = db.relationship('Movimiento', back_populates='usuario')
+    almacen = db.relationship('Almacen', backref=db.backref('usuarios', lazy=True))
 
     def __repr__(self):
         return f'<User {self.username}>'

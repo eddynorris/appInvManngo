@@ -25,6 +25,7 @@ class UserSchema(SQLAlchemyAutoSchema):
         unknown = EXCLUDE
         sqla_session = db.session 
         exclude = ("movimientos",)
+        include_fk = True
 
 class ProveedorSchema(SQLAlchemyAutoSchema):
     class Meta:
