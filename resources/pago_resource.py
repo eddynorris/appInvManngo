@@ -64,6 +64,7 @@ class PagoResource(Resource):
                 monto=data.monto,
                 metodo_pago=data.metodo_pago,
                 referencia=data.referencia,
+                fecha = data.fecha,
                 usuario_id=get_jwt().get('sub')
             )
             
@@ -80,6 +81,8 @@ class PagoResource(Resource):
             monto = request.form.get('monto')
             metodo_pago = request.form.get('metodo_pago')
             referencia = request.form.get('referencia')
+            fecha = request.form.get('fecha')
+            
             
             # Validaciones básicas
             if not all([venta_id, monto, metodo_pago]):
@@ -103,6 +106,7 @@ class PagoResource(Resource):
                 monto=monto,
                 metodo_pago=metodo_pago,
                 referencia=referencia,
+                fecha= fecha,
                 usuario_id=get_jwt().get('sub'),
                 url_comprobante=url_comprobante
             )

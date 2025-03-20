@@ -125,6 +125,7 @@ CREATE TABLE pagos (
     metodo_pago VARCHAR(20) NOT NULL CHECK (metodo_pago IN ('efectivo', 'transferencia', 'tarjeta')),
     referencia VARCHAR(50),
     usuario_id INTEGER REFERENCES users(id)
+    url_comprobante = VARCHAR(255),
 );
 
 CREATE TABLE movimientos (
