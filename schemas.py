@@ -119,7 +119,7 @@ class MovimientoSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session 
 
 class VentaDetalleSchema(SQLAlchemyAutoSchema):
-    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta"))
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta", "url_foto"))
     precio_unitario = fields.Decimal(as_string=True)
     total_linea = fields.Decimal(as_string=True, dump_only=True)
 
@@ -173,7 +173,7 @@ class GastoSchema(SQLAlchemyAutoSchema):
         include_fk = True
 
 class PedidoDetalleSchema(SQLAlchemyAutoSchema):
-    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta"))
+    presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "precio_venta", "url_foto"))
     precio_estimado = fields.Decimal(as_string=True)
 
     class Meta:
