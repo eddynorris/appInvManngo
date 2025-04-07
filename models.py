@@ -53,6 +53,7 @@ class Lote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
     proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedores.id', ondelete='SET NULL'), nullable=True)
+    descripcion = db.Column(db.String(255))
     peso_humedo_kg = db.Column(db.Numeric(10, 2), nullable=False)  # Peso inicial (mojado)
     peso_seco_kg = db.Column(db.Numeric(10, 2))  # Peso real después de secado
     cantidad_disponible_kg = db.Column(db.Numeric(10, 2))

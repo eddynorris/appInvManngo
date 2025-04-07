@@ -87,7 +87,7 @@ class MermaSchema(SQLAlchemyAutoSchema):
 class InventarioSchema(SQLAlchemyAutoSchema):
     presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre", "capacidad_kg"))
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
-    lote = fields.Nested(LoteSchema, only=("id", "proveedor", "cantidad_disponible_kg"))
+    lote = fields.Nested(LoteSchema, only=("id", "descripcion", "cantidad_disponible_kg"))
 
     class Meta:
         model = Inventario
@@ -108,7 +108,7 @@ class ClienteSchema(SQLAlchemyAutoSchema):
 
 class MovimientoSchema(SQLAlchemyAutoSchema):
     presentacion = fields.Nested(PresentacionSchema, only=("id", "nombre"))
-    lote = fields.Nested(LoteSchema, only=("id", "cantidad_disponible_kg"))
+    lote = fields.Nested(LoteSchema, only=("id", "cantidad_disponible_kg", "descripcion"))
     usuario = fields.Nested(UserSchema, only=("id", "username"))
     cantidad = fields.Decimal(as_string=True)
 
@@ -116,6 +116,7 @@ class MovimientoSchema(SQLAlchemyAutoSchema):
         model = Movimiento
         load_instance = True
         unknown = EXCLUDE
+        include_fk = True
         sqla_session = db.session 
 
 class VentaDetalleSchema(SQLAlchemyAutoSchema):
