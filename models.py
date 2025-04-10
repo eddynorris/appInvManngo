@@ -105,6 +105,7 @@ class Venta(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), nullable=False)
     almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id', ondelete='CASCADE'), nullable=False)
+    vendedor_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     fecha = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     total = db.Column(db.Numeric(12, 2), nullable=False)
     tipo_pago = db.Column(db.String(10), nullable=False)
@@ -112,6 +113,7 @@ class Venta(db.Model):
     consumo_diario_kg = db.Column(db.Numeric(10, 2))  # Estimación global para proyecciones
 
     # Relaciones
+    vendedor = db.relationship('Users')
     detalles = db.relationship('VentaDetalle', backref='venta', lazy=True, cascade="all, delete-orphan")
     pagos = db.relationship("Pago", backref="venta", lazy=True, cascade="all, delete-orphan")
 
@@ -241,6 +243,9 @@ class Gasto(db.Model):
     categoria = db.Column(db.String(50), nullable=False)  # "logistica", "personal", "otros"
     almacen_id = db.Column(db.Integer, db.ForeignKey('almacenes.id'))  # Relación con almacén
     usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Quién registró el gasto
+
+    usuario = db.relationship('Users')
+    almacen = db.relationship('Almacen')
 
     __table_args__ = (
         CheckConstraint("categoria IN ('logistica', 'personal', 'otros')"),

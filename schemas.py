@@ -135,6 +135,7 @@ class VentaDetalleSchema(SQLAlchemyAutoSchema):
 class VentaSchema(SQLAlchemyAutoSchema):
     cliente = fields.Nested(ClienteSchema, only=("id", "nombre"))
     almacen = fields.Nested(AlmacenSchema, only=("id", "nombre"))
+    vendedor = fields.Nested(UserSchema, only=("id", "username"))
     detalles = fields.List(fields.Nested(VentaDetalleSchema))
     consumo_diario_kg = fields.Decimal(as_string=True)
     saldo_pendiente = fields.Decimal(as_string=True, dump_only=True)

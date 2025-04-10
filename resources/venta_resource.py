@@ -16,10 +16,11 @@ class VentaResource(Resource):
             venta = Venta.query.get_or_404(venta_id)
             return venta_schema.dump(venta), 200
         
-        # Filtros: cliente_id, almacen_id, fecha_inicio, fecha_fin
+        # Filtros: cliente_id, almacen_id, vendedor_id, fecha_inicio, fecha_fin
         filters = {
             "cliente_id": request.args.get('cliente_id'),
             "almacen_id": request.args.get('almacen_id'),
+            "vendedor_id": request.args.get('vendedor_id'),  # Nuevo filtro por vendedor
             "fecha_inicio": request.args.get('fecha_inicio'),
             "fecha_fin": request.args.get('fecha_fin')
         }
@@ -31,6 +32,8 @@ class VentaResource(Resource):
             query = query.filter_by(cliente_id=filters["cliente_id"])
         if filters["almacen_id"]:
             query = query.filter_by(almacen_id=filters["almacen_id"])
+        if filters["vendedor_id"]:
+            query = query.filter_by(vendedor_id=filters["vendedor_id"])  # Nuevo filtro
         if filters["fecha_inicio"] and filters["fecha_fin"]:
             try:
                 # Asegurando formato ISO y manejar zonas horarias
@@ -64,11 +67,14 @@ class VentaResource(Resource):
 
         cliente = Cliente.query.get_or_404(data.cliente_id)
         almacen = Almacen.query.get_or_404(data.almacen_id)
+        
+        claims = get_jwt()
+        data.vendedor_id = claims.get('sub')
 
         total = Decimal('0')
         inventarios_a_actualizar = {}
         movimientos = []  # Lista para almacenar los movimientos
-        claims = get_jwt()
+        
 
         for detalle in data.detalles:
             presentacion = PresentacionProducto.query.get_or_404(detalle.presentacion_id)
@@ -105,6 +111,7 @@ class VentaResource(Resource):
         nueva_venta = Venta(
             cliente_id=data.cliente_id,
             almacen_id=data.almacen_id,
+            vendedor_id=data.vendedor_id,
             total=total,
             tipo_pago=data.tipo_pago,
             consumo_diario_kg=data.consumo_diario_kg,

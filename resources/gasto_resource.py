@@ -21,6 +21,8 @@ class GastoResource(Resource):
             query = query.filter_by(categoria=categoria)
         if fecha := request.args.get('fecha'):
             query = query.filter_by(fecha=fecha)
+        if usuario_id := request.args.get('usuario_id'):
+            query = query.filter_by(usuario_id=usuario_id)
 
         # Paginación
         page = request.args.get('page', 1, type=int)
@@ -55,10 +57,6 @@ class GastoResource(Resource):
         """Actualiza gasto existente con validación de datos"""
         gasto = Gasto.query.get_or_404(gasto_id)
         data = gasto_schema.load(request.get_json(), partial=True)
-        
-        # Campos no modificables
-        if data.usuario_id:
-            return {"error": "No se puede modificar el usuario del gasto"}, 400
         
         updated_gasto = gasto_schema.load(
             request.get_json(),
