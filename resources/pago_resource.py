@@ -53,10 +53,9 @@ class PagoResource(Resource):
         # Procesar datos JSON
         if 'application/json' in request.content_type:
             data = pago_schema.load(request.get_json())
+
             venta = Venta.query.get_or_404(data.venta_id)
-            
             saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
-            
             if Decimal(data.monto) > saldo_pendiente_venta:
                 return {"error": "Monto excede el saldo pendiente"}, 400
             
@@ -68,9 +67,9 @@ class PagoResource(Resource):
                 fecha = data.fecha,
                 usuario_id=get_jwt().get('sub')
             )
-            
+
             db.session.add(nuevo_pago)
-            venta.actualizar_estado()
+            venta.actualizar_estado(nuevo_pago)
             db.session.commit()
             
             return pago_schema.dump(nuevo_pago), 201
@@ -91,7 +90,7 @@ class PagoResource(Resource):
             
             venta = Venta.query.get_or_404(venta_id)
             saldo_pendiente_venta = venta.total - sum(pago.monto for pago in venta.pagos)
-            
+            print(saldo_pendiente_venta)
             if Decimal(monto) > saldo_pendiente_venta:
                 return {"error": "Monto excede el saldo pendiente"}, 400
             
@@ -104,7 +103,7 @@ class PagoResource(Resource):
             # Crear pago
             nuevo_pago = Pago(
                 venta_id=venta_id,
-                monto=monto,
+                monto=Decimal(monto),
                 metodo_pago=metodo_pago,
                 referencia=referencia,
                 fecha= fecha,
@@ -113,7 +112,7 @@ class PagoResource(Resource):
             )
             
             db.session.add(nuevo_pago)
-            venta.actualizar_estado()
+            venta.actualizar_estado(nuevo_pago)
             db.session.commit()
             
             return pago_schema.dump(nuevo_pago), 201
@@ -126,7 +125,8 @@ class PagoResource(Resource):
         """Actualiza pago con posibilidad de cambiar comprobante"""
         pago = Pago.query.get_or_404(pago_id)
         venta = pago.venta
-        
+        monto_original = pago.monto 
+
         # Actualización JSON
         if 'application/json' in request.content_type:
             data = pago_schema.load(request.get_json(), partial=True)
@@ -144,13 +144,23 @@ class PagoResource(Resource):
                 partial=True
             )
             
-            venta.actualizar_estado()
+            ajuste_pago = None
+            if hasattr(data, 'monto') and data.monto is not None:
+                # Crear un objeto temporal para representar el cambio en el monto
+                class AjustePago:
+                    def __init__(self, monto):
+                        self.monto = monto
+                # El ajuste es la diferencia entre el nuevo monto y el original
+                ajuste_pago = AjustePago(Decimal(data.monto) - monto_original)
+            
+            venta.actualizar_estado(ajuste_pago)
             db.session.commit()
             
             return pago_schema.dump(updated_pago), 200
         
         # Actualización con formulario multipart
         elif 'multipart/form-data' in request.content_type:
+            ajuste_pago = None
             # Actualizar monto si se proporciona
             if 'monto' in request.form:
                 nuevo_monto = Decimal(request.form.get('monto'))
@@ -159,6 +169,13 @@ class PagoResource(Resource):
                 if nuevo_monto > saldo_actual:
                     return {"error": "Nuevo monto excede saldo pendiente"}, 400
                 
+                            # Crear ajuste temporal
+                class AjustePago:
+                    def __init__(self, monto):
+                        self.monto = monto
+                
+                # El ajuste es la diferencia entre el nuevo monto y el original
+                ajuste_pago = AjustePago(nuevo_monto - monto_original)
                 pago.monto = nuevo_monto
             
             # Actualizar otros campos
@@ -181,7 +198,7 @@ class PagoResource(Resource):
                 delete_file(pago.url_comprobante)
                 pago.url_comprobante = None
             
-            venta.actualizar_estado()
+            venta.actualizar_estado(ajuste_pago)
             db.session.commit()
             
             return pago_schema.dump(pago), 200
@@ -194,13 +211,22 @@ class PagoResource(Resource):
         """Elimina pago y su comprobante asociado"""
         pago = Pago.query.get_or_404(pago_id)
         venta = pago.venta
-        
+        monto_eliminado = -pago.monto
+
         # Eliminar comprobante si existe
         if pago.url_comprobante:
             delete_file(pago.url_comprobante)
         
+        # Crear un objeto temporal para representar el pago que se eliminará
+        class PagoEliminado:
+            def __init__(self, monto):
+                self.monto = monto
+        
+        # El monto es negativo porque estamos eliminando un pago
+        pago_eliminado = PagoEliminado(monto_eliminado)
+
         db.session.delete(pago)
-        venta.actualizar_estado()
+        venta.actualizar_estado(pago_eliminado)
         db.session.commit()
         
         return "Pago eliminado", 200

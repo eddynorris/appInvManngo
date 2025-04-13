@@ -122,10 +122,15 @@ class Venta(db.Model):
         total_pagado = sum(pago.monto for pago in self.pagos)
         return self.total - total_pagado
 
-    def actualizar_estado(self):
-        if self.saldo_pendiente <= 0:
+    def actualizar_estado(self, nuevo_pago=None):
+        total_pagado = sum(pago.monto for pago in self.pagos)
+        if nuevo_pago:
+            total_pagado += nuevo_pago.monto
+        saldo = self.total - total_pagado
+        
+        if abs(saldo) <= 0.001:
             self.estado_pago = 'pagado'
-        elif len(self.pagos) > 0:
+        elif total_pagado > 0:
             self.estado_pago = 'parcial'
         else:
             self.estado_pago = 'pendiente'
@@ -197,12 +202,15 @@ class Pago(db.Model):
     __tablename__ = "pagos"
     id = db.Column(db.Integer, primary_key=True)
     venta_id = db.Column(db.Integer, db.ForeignKey("ventas.id", ondelete="CASCADE"), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Quién registró el pago
     monto = db.Column(db.Numeric(12, 2), nullable=False) 
     fecha = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     metodo_pago = db.Column(db.String(20), nullable=False)  # "efectivo", "transferencia", "tarjeta"
     referencia = db.Column(db.String(50))  # Número de transacción o comprobante
-    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Quién registró el pago
+
     url_comprobante = db.Column(db.String(255))
+
+    usuario = db.relationship('Users')
 
     __table_args__ = (
         CheckConstraint("metodo_pago IN ('efectivo', 'transferencia', 'tarjeta')"),
