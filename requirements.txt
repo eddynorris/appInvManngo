@@ -1,28 +1,25 @@
-# Flask y extensiones principales
-Flask==2.3.3
-Flask-RESTful==0.3.9
-Flask-SQLAlchemy==3.0.5
-Flask-JWT-Extended==4.5.2
+# FastAPI y dependencias
+fastapi==0.111.0 # O la versión más reciente estable
+uvicorn[standard]==0.29.0 # Servidor ASGI para desarrollo local
+pydantic[email]==2.7.1
+pydantic-settings==2.2.1
+mangum==0.17.0 # Adaptador para AWS Lambda
 
-# Base de datos PostgreSQL
-psycopg2-binary==2.9.9
+# Base de datos y ORM
+SQLAlchemy==2.0.29 # O versión compatible con tus otros paquetes
+psycopg2-binary==2.9.9 # Driver PostgreSQL
+alembic==1.13.1 # Para migraciones (usado por Flask-Migrate también)
+# Flask-Migrate==4.0.7 # Puedes mantenerlo si sigues usando 'flask db' para generar/aplicar migraciones
 
-# Serialización con Marshmallow
-marshmallow==3.19.0
-marshmallow-sqlalchemy==0.28.1
+# Seguridad y JWT
+python-jose[cryptography]==3.3.0 # Para manejo de JWT
+passlib[bcrypt]==1.7.4 # Para hashing de contraseñas
 
-# Herramientas adicionales
-SQLAlchemy==2.0.20
-Werkzeug==2.3.7  # Para manejo de solicitudes HTTP
-python-dotenv==1.0.0  # Para manejar variables de entorno (opcional)
-
-# Google Cloud
-google-cloud-storage==2.10.0
+# AWS SDK (si usas S3 o Secrets Manager)
+boto3==1.34.91
 
 # Utilidades
-PyJWT==2.8.0
-gunicorn==21.2.0
-requests==2.31.0
+python-dotenv==1.0.1
 
-# Validación de argumentos
-Flask-Parser==0.5.0  # Para manejar reqparse (aunque está integrado en Flask-RESTful)
+# Otros que tenías (revisa si aún son necesarios)
+# requests==2.31.0
